@@ -13,7 +13,7 @@ import multiprocessing as mp
 from functools import partial
 
 #Remove if not using lidNet
-#from lidNet import lidNet
+from lidNet.lidNet import lidNet
 
 class CC_Corpus(object):
 
@@ -42,12 +42,12 @@ class CC_Corpus(object):
 		#This dictionary maps country codes to (English) country names
 		self.country_names = {
 			"ad":"Andorra", "ae":"United Arab Emirates", "af":"Afghanistan", "ai":"Anguilla", "al":"Albania", "an":"Netherlands Antilles",
-			"ao":"Angola", "ar":"Argentina", "as":"American Samoa", "at":"Austria", "au":"Australia", "aw":"Aruba", "ax":"Åland", "az":"Azerbaijan",
+			"ao":"Angola", "ar":"Argentina", "as":"American Samoa", "at":"Austria", "au":"Australia", "aw":"Aruba", "ax":"Axland", "az":"Azerbaijan",
 			"ba":"Bosnia and Herzegovina", "bb":"Barbados", "bd":"Bangladesh", "be":"Belgium", "bf":"Burkina Faso", "bg":"Bulgaria", "bh":"Bahrain",
 			"bi":"Burundi", "bj":"Benin", "bm":"Bermuda", "bn":"Brunei", "bo":"Bolivia", "bq":"Bonaire", "br":"Brazil", "bs":"Bahamas", "bt":"Bhutan",
 			"bv":"Bouvet Island", "bw":"Botswana", "by":"Belarus", "bz":"Belize", "ca":"Canada", "cd":"Democratic Republic of the Congo", "cg":"Republic of the Congo",
-			"ch":"Switzerland", "ci":"Côte d'Ivoire", "ck":"Cook Islands", "cl":"Chile", "cm":"Cameroon", "cn":"People's Republic of China", "cr":"Costa Rica",
-			"cu":"Cuba", "cv":"Cape Verde", "cw":"Curaçao", "cx":"Christmas Island", "cy":"Cyprus", "cz":"Czech Republic", "de":"Germany", "dj":"Djibouti",
+			"ch":"Switzerland", "ci":"Coast d'Ivoire", "ck":"Cook Islands", "cl":"Chile", "cm":"Cameroon", "cn":"People's Republic of China", "cr":"Costa Rica",
+			"cu":"Cuba", "cv":"Cape Verde", "cw":"Curacao", "cx":"Christmas Island", "cy":"Cyprus", "cz":"Czech Republic", "de":"Germany", "dj":"Djibouti",
 			"dk":"Denmark", "dm":"Dominica", "do":"Dominican Republic", "dz":"Algeria", "ec":"Ecuador", "ee":"Estonia", "eg":"Egypt", "eh":"Western Sahara",
 			"er":"Eritrea", "es":"Spain", "et":"Ethiopia", "eu":"European Union", "fi":"Finland", "fj":"Fiji", "fk":"Falkland Islands", "fm":"Federated States of Micronesia",
 			"fo":"Faroe Islands", "fr":"France", "gb":"United Kingdom", "gd":"Grenada", "ge":"Georgia", "gf":"French Guiana", "gh":"Ghana", "gi":"Gibraltar",
@@ -61,7 +61,7 @@ class CC_Corpus(object):
 			"mx":"Mexico", "my":"Malaysia", "mz":"Mozambique", "na":"Namibia", "nc":"New Caledonia", "ne":"Niger", "nf":"Norfolk Island", "ng":"Nigeria", "ni":"Nicaragua",
 			"nl":"Netherlands", "no":"Norway", "np":"Nepal", "nr":"Nauru", "nz":"New Zealand", "om":"Oman", "pa":"Panama", "pe":"Peru", "pf":"French Polynesia", "pg":"Papua New Guinea",
 			"ph":"Philippines", "pk":"Pakistan", "pl":"Poland", "pm":"Saint-Pierre and Miquelon", "pr":"Puerto Rico", "ps":"Palestine", "pt":"Portugal", "pw":"Palau",
-			"py":"Paraguay", "qa":"Qatar", "re":"Réunion", "ro":"Romania", "rs":"Serbia", "ru":"Russia", "rw":"Rwanda", "sa":"Saudi Arabia", "sb":"Solomon Islands", "sc":"Seychelles",
+			"py":"Paraguay", "qa":"Qatar", "re":"Reunion", "ro":"Romania", "rs":"Serbia", "ru":"Russia", "rw":"Rwanda", "sa":"Saudi Arabia", "sb":"Solomon Islands", "sc":"Seychelles",
 			"sd":"Sudan", "se":"Sweden", "sg":"Singapore", "si":"Slovenia", "sk":"Slovakia", "sl":"Sierra Leone", "sm":"San Marino", "sn":"Senegal", "so":"Somalia", "sr":"Suriname",
 			"ss":"South Sudan", "su":"Soviet Union", "sv":"El Salvador", "sx":"Sint Maarten", "sy":"Syria", "sz":"Swaziland", "tc":"Turks and Caicos Islands", "td":"Chad",
 			"tg":"Togo", "th":"Thailand", "tj":"Tajikistan", "tl":"East Timor", "tm":"Turkmenistan", "tn":"Tunisia", "tp":"East Timor", "tr":"Turkey", "tt":"Trinidad and Tobago",
@@ -366,7 +366,8 @@ class CC_Corpus(object):
 
 		#Break path
 		items = filename.split("/")
-		items = items[1].split(".")
+		items = items[2].split(".")
+
 		region = items[0]
 		country = items[1]
 		period = items[2]
@@ -389,7 +390,7 @@ class CC_Corpus(object):
 		#Run lidNet on the corpus
 		
 		#Constants
-		lid = lidNet(lid_model)	
+		lid = lidNet(lid_model, n_gram_tuple = (1,3))	
 
 		client = boto3.client("s3")
 
@@ -405,16 +406,27 @@ class CC_Corpus(object):
 				)
 
 			segment_list = []
-			for item in response["Contents"]:
-				segment_list.append(item["Key"])
+
+			for item in response["CommonPrefixes"]:
+				new_prefix = item["Prefix"]
+				
+				#Get list of files in this prefix
+				new_response = client.list_objects_v2(
+					Delimiter = "/",
+					Bucket = read_bucket,
+					Prefix = new_prefix
+					)
+				
+				for new_item in new_response["Contents"]:				
+					segment_list.append(new_item["Key"])
 				
 			#Iterate over country files in current time period
 			for file in segment_list:
 			
-				try:
+				if True:
 			
 					print("\tStarting " + str(file), end = "")
-					region, country, period = get_metadata(file)
+					region, country, period = self.get_metadata(file)
 					
 					if file.endswith(".hdf"):
 						write_name = "temp.hdf"
@@ -423,11 +435,11 @@ class CC_Corpus(object):
 
 					#Download, open, and delete temp file
 					client.download_file(read_bucket, file, write_name)
-					current_df = load_df(write_name)
+					current_df = self.load_df(write_name)
 					os.remove(write_name)		
 						
 					print(" with " + str(len(current_df)) + " samples")
-					current_df = get_lid_df(lid, current_df)
+					current_df = self.get_lid_df(lid, current_df)
 					
 					#Get langs present, preset the S3 path
 					langs = list(set(list(current_df.loc[:,"Lang"].values)))
@@ -440,10 +452,14 @@ class CC_Corpus(object):
 						
 						#Write to S3
 						current_path = region + "/" + country + "/" + lang + "/"
-						write_filename = region + "." + country + "." + period + "." + lang + ".p"
-						lang_df.to_pickle(write_filename, compression = "gzip", protocol = 4)
+						write_filename = region + "." + country + "." + period + "." + lang + ".hdf"
+						
+						#Write to disk
+						lang_df.to_hdf(write_filename, key = "data", mode = "w", format = "fixed", complevel = 9, complib = "zlib")
+						
+						#Upload to S3, remove local copy
 						client.upload_file(write_filename, write_bucket, current_path + write_filename)
 						os.remove(write_filename)
 						
-				except Exception as e:
-					print(e, file)
+				#except Exception as e:
+				#	print(e, file)

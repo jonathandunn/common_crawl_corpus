@@ -9,11 +9,11 @@ import numpy as np
 import boto3
 import botocore
 import os
+import pathlib
+import zipfile
+import random
 import multiprocessing as mp
 from functools import partial
-
-#Remove if not using lidNet
-from lidNet.lidNet import lidNet
 
 class CC_Corpus(object):
 
@@ -140,7 +140,7 @@ class CC_Corpus(object):
 									
 				elif country_flag == 1:
 								
-					line = strip_tags(line)
+					line = self.strip_tags(line)
 					words = line.split(" ")
 					
 					#Many short texts are not real samples; limit text length
@@ -176,24 +176,28 @@ class CC_Corpus(object):
 
 			for item in response["CommonPrefixes"]:
 				segment_list.append(item["Prefix"])
-			
+
 			#Loop over segments of selected crawl ------------------#
 			for segment in segment_list:
 				
+				#Get the write chunk
+				prefix_check = segment.split("/")
+				prefix_check = prefix_check[1]
+
 				#Check if this segment has already been processed
 				filename = segment.replace("/", ".") + "wet.p"
 				print("\n\n\t" + filename)
 				
 				#Check S3 bucket
 				check_list = []
-				response1 = client.list_objects_v2(Bucket = write_bucket)
-				
+				response1 = client.list_objects_v2(Bucket = write_bucket, Prefix = prefix_check)
+
 				for item in response1["Contents"]:
 					check_list.append(item["Key"])
-				
+
 				if os.path.isfile(filename):
 					print("Already exists on local disk: " + str(filename))
-					
+				
 				elif current_folder + "/" + filename in check_list:
 					print("Already exists on s3 bucket: " + str(filename))
 					
@@ -215,57 +219,60 @@ class CC_Corpus(object):
 
 					file_list = []
 
-					for item in response["Contents"]:
-						file_list.append(item["Key"])
-					
-					print(" with " + str(len(file_list)) + " files")
-					
-					#Loop over WET files in this segment
-					#Multi-process this part
-					
 					try:
-						line_list = []
+						for item in response["Contents"]:
+							file_list.append(item["Key"])
 						
-						pool_instance = mp.Pool(processes = workers, maxtasksperchild = 1)
-						line_list = pool_instance.map(partial(process_wet,
-												read_bucket = read_bucket,
-												country_codes = country_codes
-												), file_list, chunksize = 1)
+						print(" with " + str(len(file_list)) + " files")
+					
+						#Loop over WET files in this segment
+						#Multi-process this part
+						
+						try:
+							line_list = []
+							
+							pool_instance = mp.Pool(processes = workers, maxtasksperchild = 1)
+							line_list = pool_instance.map(partial(self.process_wet,
+													read_bucket = read_bucket
+													), file_list, chunksize = 1)
 
-						pool_instance.close()
-						pool_instance.join()
-						
-						print("Done " + str(len(line_list)))
+							pool_instance.close()
+							pool_instance.join()
+							
+							print("Done " + str(len(line_list)))
 
-						#Done getting lines, now dedupe
-						
-						line_list = [item for sublist in line_list for item in sublist]
-						current_df = pd.DataFrame(line_list)
-						line_list = []
-						
-						if len(current_df) > 100:
-						
-							current_df.columns = ["Country", "URL", "Text"]
-							starting_length = len(current_df)
+							#Done getting lines, now dedupe
 							
-							current_df.drop_duplicates(subset = "Text", keep = False, inplace = True)
-							print("Formatted and Removed " + str(starting_length - len(current_df)) + " with total: " + str(len(current_df)))
+							line_list = [item for sublist in line_list for item in sublist]
+							current_df = pd.DataFrame(line_list)
+							line_list = []
 							
-							filename = segment.replace("/", ".") + "p"
-							current_df.to_pickle(filename, compression = "gzip", protocol = 4)
-							print("\tWrote " + filename)
+							if len(current_df) > 100:
 							
-							#Write to S3
-							with open(filename, "rb") as data:
-								filename2 = current_folder + "/" + filename
-								client.upload_fileobj(data, write_bucket, filename2)
-								print("\tUploaded " + filename2)
+								current_df.columns = ["Country", "URL", "Text"]
+								starting_length = len(current_df)
 								
-							#Remove from local instance
-							os.remove(filename)
+								current_df.drop_duplicates(subset = "Text", keep = False, inplace = True)
+								print("Formatted and Removed " + str(starting_length - len(current_df)) + " with total: " + str(len(current_df)))
+								
+								filename = segment.replace("/", ".") + "p"
+								current_df.to_pickle(filename, compression = "gzip", protocol = 4)
+								print("\tWrote " + filename)
+								
+								#Write to S3
+								with open(filename, "rb") as data:
+									filename2 = current_folder + "/" + filename
+									client.upload_fileobj(data, write_bucket, filename2)
+									print("\tUploaded " + filename2)
+									
+								#Remove from local instance
+								os.remove(filename)
+								
+						except Exception as e:
+							print(e)
 							
 					except Exception as e:
-						print(e)
+							print(e)
 						
 #----------------------------------------------------------------------------------------------------------------------#
 
@@ -463,3 +470,121 @@ class CC_Corpus(object):
 						
 				#except Exception as e:
 				#	print(e, file)
+	
+	#--------------------------------------------------------------------
+	
+	def get_text(self, full_df):
+	
+		full_text = []
+		text = list(full_df.loc[:,"Text"].values)
+		
+		word_counter = 0
+		temp_string = ""
+		
+		for sample in text:
+			for word in sample.split(" "):
+				
+				word_counter += 1
+				temp_string += word + " "
+				
+				if word_counter >= 100:
+					full_text.append(temp_string[:-1])
+					word_counter = 0
+					temp_string = ""
+				
+		return full_text
+	#--------------------------------------------------------------------
+	
+	def write_text(self, full_text, write_dir, write_filename):
+	
+		pathlib.Path(write_dir).mkdir(parents = True, exist_ok = True)
+		
+		random.shuffle(full_text)
+	
+		with codecs.open(os.path.join(write_dir, write_filename), "w", encoding = "utf-8", errors = "replace") as fo:
+			for line in full_text:
+				fo.write(str(line))
+				fo.write("\n")
+				
+	#--------------------------------------------------------------------
+	
+	def zip_dir(self, region):
+	
+		print("\nWriting to zip file.\n")
+		path = os.path.join(".", region)	
+		zipf = zipfile.ZipFile(region + ".zip", "w", zipfile.ZIP_DEFLATED)
+		
+		for root, dirs, files in os.walk(path):
+			for file in files:
+				zipf.write(os.path.join(root, file))
+	
+	#-------------------------------------------------------------------
+	
+	def final_cc(self, region, path_to_input):
+	
+		#Load crawl files from local drive, merge and dedupe, and save to local drive
+		#This process should be run on a large machine but doesn't take long
+		#Use AWS-CLI to upload files in path_to_output to S3 if desired
+	
+		#---- Iterate over files
+		print("")
+		path_to_output = os.path.join(".", region)
+
+		for country in os.listdir(path_to_input):
+			
+			print("Starting " + country)
+			country_path = os.path.join(path_to_input, country)
+
+			for language in os.listdir(country_path):
+			
+				print("\tStarting " + country + ": " + language, end = "\t")
+				language_path = os.path.join(country_path, language)
+				
+				first_flag = True	#Whether to initialize holder file
+				
+				for filename in os.listdir(language_path):
+					filename = os.path.join(path_to_input, country, language, filename)
+
+					#Open hdf
+					if filename.endswith(".hdf"): 
+					
+						#print("\t\t" + filename)
+						current_df = pd.read_hdf(filename)
+						
+						if first_flag == True:
+							full_df = current_df
+							first_flag = False
+							
+						else:
+							full_df = pd.concat([full_df, current_df])
+					
+					#Or, open pickles
+					if filename.endswith(".p"): 
+					
+						#print("\t\t" + filename)
+						current_df = pd.read_pickle(filename, compression = "gzip")
+						
+						if first_flag == True:
+							full_df = current_df
+							first_flag = False
+							
+						else:
+							full_df = pd.concat([full_df, current_df])
+					
+				#Dedupe once all country/language files have been added
+				starting = time.time()
+				full_length = len(full_df)
+				full_df.drop_duplicates(subset = "Text", keep = "first", inplace = True)
+
+				print("Total: " + str(len(full_df)) + ", after removing " + str((full_length - len(full_df))) + " in " + str(time.time() - starting))
+				full_text = self.get_text(full_df)
+				del full_df
+				
+				if len(full_text) > 500:
+					
+					write_dir = os.path.join(path_to_output, region, country)
+					write_filename = "cc-gdc." + region + "." + country + "." + language + ".txt"
+					self.write_text(full_text, write_dir, write_filename)
+
+		#Now zip entire directory
+		self.zip_dir(region)

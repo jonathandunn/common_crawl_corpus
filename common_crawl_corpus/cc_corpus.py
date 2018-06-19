@@ -192,8 +192,11 @@ class CC_Corpus(object):
 				check_list = []
 				response1 = client.list_objects_v2(Bucket = write_bucket, Prefix = prefix_check)
 
-				for item in response1["Contents"]:
-					check_list.append(item["Key"])
+				try:
+					for item in response1["Contents"]:
+						check_list.append(item["Key"])
+				except:
+					check_list = []
 
 				if os.path.isfile(filename):
 					print("Already exists on local disk: " + str(filename))

@@ -324,7 +324,8 @@ class CC_Corpus(object):
 		full_df.drop_duplicates(subset = "Text", keep = False, inplace = True)
 
 		print(str(full_length - len(full_df)) + " in " + str(time.time() - starting))
-				
+		print("Now: " + str(len(full_df)))
+		
 		#Now save the full file
 		#full_df.to_hdf("Full_Dataset.hdf", key = "Table", format = "fixed", mode = "w", complevel = 9)
 
@@ -352,8 +353,8 @@ class CC_Corpus(object):
 						current_df.to_pickle(name, compression = "gzip", protocol = 4)		
 						print(country + ": " + str(len(current_df)))
 						
-					except:
-					
+					except Exception as e:
+						print(e)
 						print(country + ": " + str(len(current_df)) + " ERROR!")
 	#------------------------------------------------------------------------------------------------------------#
 	

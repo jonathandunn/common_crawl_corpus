@@ -176,11 +176,14 @@ class CC_Corpus(object):
 		return line_list
 	#------------------------------------------------------------------------------------------------#
 
-	def crawl_cc(self, prefix_list, write_bucket, workers = 1):
+	def crawl_cc(self, prefix_list, write_bucket, workers = 1, local_flag = False):
 	
 		#AWS Presets -----------------------------------#
 		client = boto3.client("s3")
 		read_bucket = "commoncrawl"
+		
+		if not isinstance(prefix_list, (list,)):
+			prefix_list = [prefix_list]
 			
 		for current_prefix in prefix_list:
 
@@ -192,7 +195,7 @@ class CC_Corpus(object):
 				Bucket = read_bucket,
 				Prefix = current_prefix
 				)
-				
+
 			segment_list = []
 
 			for item in response["CommonPrefixes"]:
@@ -210,20 +213,22 @@ class CC_Corpus(object):
 				print("\n\n\t" + filename)
 				
 				#Check S3 bucket
-				check_list = []
-				response1 = client.list_objects_v2(Bucket = write_bucket, Prefix = prefix_check)
-
-				try:
-					for item in response1["Contents"]:
-						check_list.append(item["Key"])
-				except:
+				if local_flag == False:
 					check_list = []
+					response1 = client.list_objects_v2(Bucket = write_bucket, Prefix = prefix_check)
+
+					try:
+						for item in response1["Contents"]:
+							check_list.append(item["Key"])
+					except:
+						check_list = []
 
 				if os.path.isfile(filename):
 					print("Already exists on local disk: " + str(filename))
 				
-				elif current_folder + "/" + filename in check_list:
-					print("Already exists on s3 bucket: " + str(filename))
+				elif local_flag == False:
+					if current_folder + "/" + filename in check_list:
+						print("Already exists on s3 bucket: " + str(filename))
 					
 				else:
 				
@@ -280,17 +285,22 @@ class CC_Corpus(object):
 								print("Formatted and Removed " + str(starting_length - len(current_df)) + " with total: " + str(len(current_df)))
 								
 								filename = segment.replace("/", ".") + "p"
+								
+								if local_flag == True:
+									filename = os.path.join(write_bucket, filename)
+									
 								current_df.to_pickle(filename, compression = "gzip", protocol = 4)
 								print("\tWrote " + filename)
 								
 								#Write to S3
-								with open(filename, "rb") as data:
-									filename2 = current_folder + "/" + filename
-									client.upload_fileobj(data, write_bucket, filename2)
-									print("\tUploaded " + filename2)
-									
-								#Remove from local instance
-								os.remove(filename)
+								if local_flag == False:
+									with open(filename, "rb") as data:
+										filename2 = current_folder + "/" + filename
+										client.upload_fileobj(data, write_bucket, filename2)
+										print("\tUploaded " + filename2)
+										
+									#Remove from local instance
+									os.remove(filename)
 								
 						except Exception as e:
 							print(e)

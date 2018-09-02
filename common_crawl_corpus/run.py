@@ -1,49 +1,7 @@
-prefix_list = ["CC-MAIN-2013-20",
-				"CC-MAIN-2013-48",
-				"CC-MAIN-2014-10",
-				"CC-MAIN-2014-15",
-				"CC-MAIN-2014-23",
-				"CC-MAIN-2014-35",
-				"CC-MAIN-2014-41",
-				"CC-MAIN-2014-42",
-				"CC-MAIN-2014-49",
-				"CC-MAIN-2014-52",
-				"CC-MAIN-2015-06",
-				"CC-MAIN-2015-11",
-				"CC-MAIN-2015-14",
-				"CC-MAIN-2015-18",
-				"CC-MAIN-2015-22",
-				"CC-MAIN-2015-27",
-				"CC-MAIN-2015-32",
-				"CC-MAIN-2015-35",
-				"CC-MAIN-2015-40",
-				"CC-MAIN-2015-48",
-				"CC-MAIN-2016-07",
-				"CC-MAIN-2016-18",
-				"CC-MAIN-2016-22",
-				"CC-MAIN-2016-26",
-				"CC-MAIN-2016-30",
-				"CC-MAIN-2016-36",
-				"CC-MAIN-2016-40",
-				"CC-MAIN-2016-44",
-				"CC-MAIN-2016-50",
-				"CC-MAIN-2017-04",
-				"CC-MAIN-2017-09",
-				"CC-MAIN-2017-13",
-				"CC-MAIN-2017-17",
-				"CC-MAIN-2017-22",
-				"CC-MAIN-2017-26",
-				"CC-MAIN-2017-30",
-				"CC-MAIN-2017-34",
-				"CC-MAIN-2017-39",
-				"CC-MAIN-2017-43",
-				"CC-MAIN-2017-47",
-				"CC-MAIN-2017-51",
-				]
-				
+lid_model = "Model.LID.MLP.400kx3_hash.1-3grams.262k.hdf"
+input_dir = "./africa_north"
+
 from cc_corpus import CC_Corpus
 cc = CC_Corpus()
 
-for prefix in prefix_list:
-	cc.crawl_cc(prefix, "./Temp_Out", workers = 32, local_flag = True)
-	cc.format_cc(prefix, "./Temp_Out", "./Output")
+cc.lid_cc(input_dir, "./Output", lid_model)

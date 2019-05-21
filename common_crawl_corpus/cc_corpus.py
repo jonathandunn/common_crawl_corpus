@@ -14,6 +14,9 @@ import zipfile
 import random
 import multiprocessing as mp
 from functools import partial
+from warcio.archiveiterator import ArchiveIterator
+from alphabet_detector import AlphabetDetector
+from gensim.parsing import preprocessing
 
 class CC_Corpus(object):
 
@@ -24,7 +27,7 @@ class CC_Corpus(object):
 			"ad", "ae", "af", "al", "ao", "aq", "ar", "as", "at", "au",
 			"aw", "ax", "az", "ba", "bb", "bd", "be", "bf", "bg", "bh", "bi", "bj",
 			"bl", "bm", "bn", "bo", "bq", "br", "bs", "bt", "bw", "by", "bz", "ca",
-			"cc", "cd", "cf", "cg", "ch", "ci", "ck", "cl", "cm", "cn", "co", "cr",
+			"cd", "cf", "cg", "ch", "ci", "ck", "cl", "cm", "cn", "co", "cr",
 			"cu", "cv", "cw", "cx", "cy", "cz", "de", "dj", "dk", "dm", "do", "dz",
 			"ec", "ee", "eg", "er", "es", "et", "fi", "fj", "fk", "fm", "fo", "fr",
 			"ga", "gb", "gd", "ge", "gf", "gh", "gi", "gl", "gm", "gn", "gp",
@@ -147,7 +150,7 @@ class CC_Corpus(object):
 			"فلسطين":"middle_east", "قطر":"middle_east", "مصر":"middle_east", "مليسيا":"asia_southeast", "موريتانيا":"africa_north", "پاكستان":"asia_south", "پاکستان":"asia_south", "ڀارت":"asia_south",
 			"भारत":"asia_south", "বাংলা":"asia_south", "ভারত":"asia_south", "ਭਾਰਤ":"asia_south", "ભારત":"asia_south", "இந்தியா":"asia_south", "இலங்கை":"asia_south", "சிங்கப்பூர்":"asia_southeast",
 			"భారత్":"asia_south", "ಭಾರತ":"asia_south", "ഭാരതം":"asia_south", "ලංකා":"asia_southeast", "ไทย":"asia_southeast", "中国":"asia_east", "中國":"asia_east", "台湾":"asia_east",
-			"台灣":"asia_east", "新加坡":"asia_southeast", "澳門":"asia_east", "香港":"asia_east", "한국":"asia_east"
+			"台灣":"asia_east", "新加坡":"asia_southeast", "澳門":"asia_east", "香港":"asia_east", "한국":"asia_east", "st": "africa_sub"
 			}
 	
 	#----------------------------------------------------------------------------------------------#
@@ -165,48 +168,110 @@ class CC_Corpus(object):
 		starting = time.time()
 		line_list = []
 		
+		ad = AlphabetDetector()
 		client = boto3.client("s3")			
 		response = client.get_object(Bucket = read_bucket, Key = file)
+		
+		#List of illegal characters
+		illegal_chars = ["|", "©", "«", "®", "»", "˂", "˃", "˄", "˅", "/", "\\", "{", "}"]
+		
+		#Initialize emoji remover
+		try:
+			# Wide UCS-4 build
+			myre = re.compile(u'['
+				u'\U0001F300-\U0001F64F'
+				u'\U0001F680-\U0001F6FF'
+				u'\u2600-\u26FF\u2700-\u27BF]+', 
+				re.UNICODE)
+		except re.error:
+			# Narrow UCS-2 build
+			myre = re.compile(u'('
+				u'\ud83c[\udf00-\udfff]|'
+				u'\ud83d[\udc00-\ude4f\ude80-\udeff]|'
+				u'[\u2600-\u26FF\u2700-\u27BF])+', 
+				re.UNICODE)
+		
+		with gzip.open(response["Body"], "r") as stream:
+			for record in ArchiveIterator(stream):
+				if record.rec_type == "conversion":
 				
-		with gzip.open(response["Body"], "r") as fo:
-					
-			for line in fo:
-							
-				line = line.decode("utf-8").strip()
-							
-				if line == "WARC/1.0":
-					country_flag = 0
-								
-				#Get and format url
-				elif line[0:15] == "WARC-Target-URI":
-							
-					line = line[17:]
-					url = line
-					domains = tldextract.extract(line)
+					current_url = record.rec_headers.get_header("WARC-Target-URI")
+					domains = tldextract.extract(current_url)
 					code = domains.suffix
-								
-					#Set flag to indicate allowed code
-					if code in self.country_codes:
-						country_flag = 1
-									
-				elif country_flag == 1:
-								
-					line = self.strip_tags(line)
-					words = line.split(" ")
 					
-					#Many short texts are not real samples; limit text length
-					if len(words) > 40:
+					
+					if code in self.country_codes:
+						page = record.content_stream().read().decode("utf-8")
+						
+						current_country = self.country_names[code]
+						current_region = self.country_regions[code]
+						line_number = 0
+						
+						for line in page.splitlines():
+							
+							#First cut, has to be 15 characters
+							if len(line) > 15:
+							
+								#Remove links, hashtags, at-mentions, mark-up, and "RT"
+								line = re.sub(r"http\S+", "", line)
+								line = re.sub(r"@\S+", "", line)
+								line = re.sub(r"#\S+", "", line)
+								line = re.sub("<[^>]*>", "", line)
+													
+								#Remove emojis
+								line = re.sub(myre, "", line)
+														
+								#Remove extra spaces
+								line = ct.pipe(line, 
+												preprocessing.strip_tags, 
+												preprocessing.split_alphanum,
+												preprocessing.strip_multiple_whitespaces
+												)
 								
-						if line.count("-") < 5 and line.count("|") < 2 and line.count("/") < 5:
-							if line.count("rror") < 2:
-								line_list.append((code, url, line))
+								#Check if still above 15
+								if len(line) > 15:
+								
+									#Check if contains any navigational / boilerplate characters
+									if not any(char in line for char in illegal_chars):
+									
+										#Check if all numbers / characters
+										if len(ct.pipe(line, preprocessing.strip_numeric, preprocessing.strip_punctuation).replace(" ","")) > 12:
+																						
+											#Check if has Chinese / Japanese / Korean characters:
+											try:
+												if ad.is_cjk(line) or ad.is_hangul(line) or ad.is_hiragana(line) or ad.is_katakana(line):
+													length = 15
+											
+												else:
+													length = 50
+											
+											#Problem with character detection, default size
+											except:
+												length = 50
+											
+											#Check length threshold
+											if len(line) > length:
+											
+												#Final check for non-text
+												if line.count("-") < 4:
+													if line.count("(") < 4:
+														if line.count(")") < 4:
+															if line.count("=") < 2:
+																if line.count("_") < 2:
+																	if line.count(".") < 15:
+																		if line.count("&") < 4:
+																			if line.count("[") < 3:
+																				if line.count("]") < 3:
+																					if line.count("*") < 5:
+																						line_number += 1
+																						line_list.append((code, current_country, current_region, current_url, line_number, line))
 					
 		print("Loading " + str(file) + ": " + str(time.time() - starting))
-		
+
 		return line_list
 	#------------------------------------------------------------------------------------------------#
 
-	def crawl_cc(self, prefix_list, write_bucket, workers = 1, local_flag = False):
+	def crawl_cc(self, prefix_list, write_bucket, workers = 1):
 	
 		#AWS Presets -----------------------------------#
 		client = boto3.client("s3")
@@ -239,37 +304,33 @@ class CC_Corpus(object):
 				prefix_check = prefix_check[1]
 
 				#Check if this segment has already been processed
-				filename = segment.replace("/", ".") + "wet.p"
+				filename = segment.replace("/", ".") + "wet.hdf"
 				print("\n\n\t" + filename)
-				
+
 				#Check S3 bucket
-				if local_flag == False:
+				check_list = []
+				response1 = client.list_objects_v2(Bucket = write_bucket, Prefix = prefix_check)
+
+				try:
+					for item in response1["Contents"]:
+						check_list.append(item["Key"])
+				except:
 					check_list = []
-					response1 = client.list_objects_v2(Bucket = write_bucket, Prefix = prefix_check)
 
-					try:
-						for item in response1["Contents"]:
-							check_list.append(item["Key"])
-					except:
-						check_list = []
-
-				if os.path.isfile(filename):
-					print("Already exists on local disk: " + str(filename))
-				
-				elif local_flag == False:
-					if current_folder + "/" + filename in check_list:
-						print("Already exists on s3 bucket: " + str(filename))
+				if current_folder + "/" + filename in check_list:
+					print("Already exists on s3 bucket: " + str(filename))
 					
 				else:
 				
 					print("\t" + current_folder + "/" + filename + " does not exist yet.")
+
 					#Script initialization  --------------------------------#
 					country_flag = 0
 					line_list = []
 					
 					segment = segment + "wet/"
 					print("\n\n\tStarting " + str(segment), end = "")
-					
+
 					response = client.list_objects_v2(
 					Delimiter = "/",
 					Bucket = read_bucket,
@@ -279,6 +340,7 @@ class CC_Corpus(object):
 					file_list = []
 
 					try:
+
 						for item in response["Contents"]:
 							file_list.append(item["Key"])
 						
@@ -288,9 +350,10 @@ class CC_Corpus(object):
 						#Multi-process this part
 						
 						try:
+
 							line_list = []
 							
-							pool_instance = mp.Pool(processes = workers, maxtasksperchild = 1)
+							pool_instance = mp.Pool(processes = workers, maxtasksperchild = None)
 							line_list = pool_instance.map(partial(self.process_wet,
 													read_bucket = read_bucket
 													), file_list, chunksize = 1)
@@ -301,36 +364,31 @@ class CC_Corpus(object):
 							print("Done " + str(len(line_list)))
 
 							#Done getting lines, now dedupe
-							
 							line_list = [item for sublist in line_list for item in sublist]
 							current_df = pd.DataFrame(line_list)
 							line_list = []
 							
 							if len(current_df) > 100:
 							
-								current_df.columns = ["Country", "URL", "Text"]
+								current_df.columns = ["Domain", "Country", "Region", "URL", "LineID", "Text"]
 								starting_length = len(current_df)
 								
 								current_df.drop_duplicates(subset = "Text", keep = False, inplace = True)
 								print("Formatted and Removed " + str(starting_length - len(current_df)) + " with total: " + str(len(current_df)))
 								
-								filename = segment.replace("/", ".") + "p"
-								
-								if local_flag == True:
-									filename = os.path.join(write_bucket, filename)
+								filename = segment.replace("/", ".") + "hdf"
 									
-								current_df.to_pickle(filename, compression = "gzip", protocol = 4)
+								current_df.to_hdf(filename, mode = "w", key = "data", format = "fixed", complevel = 9)
 								print("\tWrote " + filename)
 								
 								#Write to S3
-								if local_flag == False:
-									with open(filename, "rb") as data:
-										filename2 = current_folder + "/" + filename
-										client.upload_fileobj(data, write_bucket, filename2)
-										print("\tUploaded " + filename2)
+								with open(filename, "rb") as data:
+									filename2 = current_folder + "/" + filename
+									client.upload_fileobj(data, write_bucket, filename2)
+									print("\tUploaded " + filename2)
 										
-									#Remove from local instance
-									os.remove(filename)
+								#Remove from local instance
+								os.remove(filename)
 								
 						except Exception as e:
 							print(e)

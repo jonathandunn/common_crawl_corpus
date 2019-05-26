@@ -1,6 +1,5 @@
 from cc_corpus import CC_Corpus
 import random
-import time
 
 #Initialize
 cc = CC_Corpus()
@@ -23,11 +22,7 @@ prefix_list = [
 		 ]
 		 
 #Choose random segment
-prefix_list = [random.choice(prefix_list)]
-
-#Delay a random amount so multiple instances don't do the same files
-delay = random.randrange(20, 1000)
-time.sleep(delay)
+random.shuffle(prefix_list)
 
 cc.crawl_cc(prefix_list, write_bucket, workers = 12)
 

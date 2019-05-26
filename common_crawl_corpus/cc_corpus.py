@@ -297,6 +297,7 @@ class CC_Corpus(object):
 				segment_list.append(item["Prefix"])
 
 			#Loop over segments of selected crawl ------------------#
+			random.shuffle(segment_list)
 			for segment in segment_list:
 				
 				#Get the write chunk

@@ -408,8 +408,7 @@ class CC_Corpus(object):
 		#---- Iterate over files
 		first_flag = True
 
-		for filename in os.listdir(path_to_input):
-			
+		for filename in os.listdir(path_to_input):			
 			filename = os.path.join(path_to_input, filename)
 			
 			#Open hdf
@@ -417,7 +416,6 @@ class CC_Corpus(object):
 			
 				print(filename)
 				current_df = pd.read_hdf(filename, key = "data")
-				current_df.sort_values(by = ["URL", "LineID"], inplace = True)
 				
 				if first_flag == True:
 					full_df = current_df
@@ -425,48 +423,52 @@ class CC_Corpus(object):
 					
 				else:
 					full_df = pd.concat([full_df, current_df])
-					full_df.sort_values(by = ["URL", "LineID"], inplace = True)
-			
+					print(len(full_df), end = "\t")
+					full_df.drop_duplicates(subset = "Text", keep = "first", inplace = True)
+					print(len(full_df))
+					
 		#Dedupe
 		starting = time.time()
 		full_length = len(full_df)
 		full_df.drop_duplicates(subset = "Text", keep = "first", inplace = True)
-
+		full_df.sort_values(by = ["URL", "LineID"], inplace = True)
+		
 		print(str(full_length - len(full_df)) + " in " + str(time.time() - starting))
 		print("Now: " + str(len(full_df)))
 
 		#Now save country-specific files
-		for country in self.country_codes:
-			
-			if country in self.country_regions:
+		reverse = {v: k for k, v in self.country_names.items()}
+		for country in reverse:
+		
+			country_code = reverse[country]	
+
+			if country_code in self.country_regions:
+				region = self.country_regions[country_code]
 				
-				region = self.country_regions[country]
-			
-				query_string = "(Country == '" + str(country) + "')"
+				query_string = '(Country == "' + str(country) + '")'
 				current_df = full_df.query(query_string)
-				
 				current_df.infer_objects()
-				
+					
 				if len(current_df) > 1000:
-				
+					
 					current_count = 0	#For counting millions of samples
-					
+						
 					while True:
-					
+						
 						if len(current_df) > 1000000:
 							write_df = current_df.head(n = 1000000)
 							current_df = current_df.tail(n = len(current_df) - 1000000)
-						
+							
 						else:
 							write_df = current_df
 							current_df = [1, 2, 3, 4, 5]
-						
+							
 						current_count += 1
-						os.makedirs(name = os.path.join(path_to_output, country, region), exist_ok = True)
-						name = os.path.join(path_to_output, region, country, region + "." + country + "." + nickname + "." + str(current_count) + ".hdf")
+						os.makedirs(name = os.path.join(path_to_output, region, country_code), exist_ok = True)
+						name = os.path.join(path_to_output, region, country_code, region + "." + country_code + "." + nickname + "." + str(current_count) + ".hdf")
 						write_df.to_hdf(name, mode = "w", key = "data", format = "fixed", complevel = 9)	
 						print(country + ": " + str(len(write_df)))
-						
+							
 						if len(current_df) < 1000:
 							break	
 							

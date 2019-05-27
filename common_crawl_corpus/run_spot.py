@@ -11,8 +11,7 @@ write_bucket = "ccglu1"
 prefix_list = [
 		"CC-MAIN-2013-48", 
 		"CC-MAIN-2014-15",
-		"CC-MAIN-2014-35", 
-		"CC-MAIN-2014-42",
+		"CC-MAIN-2014-35",
 		 ]
 		 
 #Choose random segment

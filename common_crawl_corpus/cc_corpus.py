@@ -401,8 +401,8 @@ class CC_Corpus(object):
 
 	def format_cc(self, nickname, path_to_input, path_to_output):
 	
-		#Load crawl files from local drive, merge and dedupe, and save to local drive
-		#This process should be run on a large machine but doesn't take long
+		#Load crawl files from S3 bucket, merge and dedupe, and save to local drive
+		#This process should be run on a large machine (much memory) but doesn't take long
 		#Use AWS-CLI to upload files in path_to_output to S3 if desired
 	
 		#---- Iterate over files
@@ -416,7 +416,8 @@ class CC_Corpus(object):
 			if filename.endswith(".wet.hdf"): 
 			
 				print(filename)
-				current_df = pd.read_hdf(filename)
+				current_df = pd.read_hdf(filename, key = "data")
+				current_df.sort_values(by = ["URL", "LineID"], inplace = True)
 				
 				if first_flag == True:
 					full_df = current_df
@@ -424,30 +425,15 @@ class CC_Corpus(object):
 					
 				else:
 					full_df = pd.concat([full_df, current_df])
+					full_df.sort_values(by = ["URL", "LineID"], inplace = True)
 			
-			#Or, open pickles
-			if filename.endswith(".wet.p"): 
-			
-				print(filename)
-				current_df = pd.read_pickle(filename, compression = "gzip")
-				
-				if first_flag == True:
-					full_df = current_df
-					first_flag = False
-					
-				else:
-					full_df = pd.concat([full_df, current_df])
-					
 		#Dedupe
 		starting = time.time()
 		full_length = len(full_df)
-		full_df.drop_duplicates(subset = "Text", keep = False, inplace = True)
+		full_df.drop_duplicates(subset = "Text", keep = "first", inplace = True)
 
 		print(str(full_length - len(full_df)) + " in " + str(time.time() - starting))
 		print("Now: " + str(len(full_df)))
-		
-		#Now save the full file
-		#full_df.to_hdf("Full_Dataset.hdf", key = "Table", format = "fixed", mode = "w", complevel = 9)
 
 		#Now save country-specific files
 		for country in self.country_codes:
@@ -461,21 +447,29 @@ class CC_Corpus(object):
 				
 				current_df.infer_objects()
 				
-				if len(current_df) > 10:
+				if len(current_df) > 1000:
 				
-					#Cap length of current_df
-					if len(current_df) > 5000000:
-						current_df = current_df.sample(n = 5000000, replace = False)
-				
-					try:
+					current_count = 0	#For counting millions of samples
 					
-						name = os.path.join(path_to_output, region + "." + country + "." + nickname + ".p")
-						current_df.to_pickle(name, compression = "gzip", protocol = 4)		
-						print(country + ": " + str(len(current_df)))
+					while True:
+					
+						if len(current_df) > 1000000:
+							write_df = current_df.head(n = 1000000)
+							current_df = current_df.tail(n = len(current_df) - 1000000)
 						
-					except Exception as e:
-						print(e)
-						print(country + ": " + str(len(current_df)) + " ERROR!")
+						else:
+							write_df = current_df
+							current_df = [1, 2, 3, 4, 5]
+						
+						current_count += 1
+						os.makedirs(name = os.path.join(path_to_output, country, region), exist_ok = True)
+						name = os.path.join(path_to_output, region, country, region + "." + country + "." + nickname + "." + str(current_count) + ".hdf")
+						write_df.to_hdf(name, mode = "w", key = "data", format = "fixed", complevel = 9)	
+						print(country + ": " + str(len(write_df)))
+						
+						if len(current_df) < 1000:
+							break	
+							
 	#------------------------------------------------------------------------------------------------------------#
 	
 	def load_df(self, file):

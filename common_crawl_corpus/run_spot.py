@@ -9,16 +9,10 @@ write_bucket = "ccglu1"
 
 #Define prefix from the Common Crawl
 prefix_list = [
-		"CC-MAIN-2013-20", 
 		"CC-MAIN-2013-48", 
-		"CC-MAIN-2014-10", 
 		"CC-MAIN-2014-15",
-		"CC-MAIN-2014-23", 
 		"CC-MAIN-2014-35", 
-		"CC-MAIN-2014-41", 
 		"CC-MAIN-2014-42",
-		"CC-MAIN-2014-49", 
-		"CC-MAIN-2014-52", 
 		 ]
 		 
 #Choose random segment

@@ -423,7 +423,7 @@ class CC_Corpus(object):
 			
 		#segment_list = segment_list[0:49] #DELETE
 			
-		segment_list = ct.partition_all(20, segment_list)
+		segment_list = ct.partition_all(35, segment_list)
 		
 		full_list = []
 		

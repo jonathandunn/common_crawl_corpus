@@ -406,31 +406,64 @@ class CC_Corpus(object):
 		#Use AWS-CLI to upload files in path_to_output to S3 if desired
 	
 		#---- Iterate over files
-		first_flag = True
+		#AWS Presets -----------------------------------#
+		client = boto3.client("s3")
+		read_bucket = path_to_input
 
-		for filename in os.listdir(path_to_input):			
-			filename = os.path.join(path_to_input, filename)
+		response = client.list_objects_v2(
+				Delimiter = "/",
+				Bucket = read_bucket,
+				Prefix = nickname + "/"
+				)
+
+		segment_list = []
+
+		for item in response["Contents"]:
+			segment_list.append(item["Key"])
 			
-			#Open hdf
-			if filename.endswith(".wet.hdf"): 
+		#segment_list = segment_list[0:49] #DELETE
 			
-				print(filename)
-				current_df = pd.read_hdf(filename, key = "data")
+		segment_list = ct.partition_all(10, segment_list)
+		
+		full_list = []
+		
+		for subset in segment_list:
+		
+			df_list = []
+			
+			for filename in subset:
 				
-				if first_flag == True:
-					full_df = current_df
-					first_flag = False
+				#Open hdf
+				if filename.endswith(".wet.hdf"): 
+				
+					print(filename)
+					s3 = boto3.resource("s3")
+					s3.meta.client.download_file(path_to_input, filename, "temp.hdf")
+					current_df = pd.read_hdf("temp.hdf", key = "data")
+					os.remove("temp.hdf")
 					
-				else:
-					full_df = pd.concat([full_df, current_df])
-					print(len(full_df), end = "\t")
-					full_df.drop_duplicates(subset = "Text", keep = "first", inplace = True)
-					print(len(full_df))
-					
-		#Dedupe
+					df_list.append(current_df)
+						
+			#Done with subset
+			full_df = pd.concat(df_list)
+			print(len(full_df), end = "\t")
+			full_df.drop_duplicates(subset = "Text", keep = "first", inplace = True)
+			print(len(full_df))
+			full_list.append(full_df)
+			
+			#Clean
+			del df_list
+			del full_df
+			
+		#Done with all files
+		print("Merging all files")
 		starting = time.time()
+		full_df = pd.concat(full_list)
+		del full_list
+		print("Done merging")
 		full_length = len(full_df)
 		full_df.drop_duplicates(subset = "Text", keep = "first", inplace = True)
+		print("Done deduplicating")
 		full_df.sort_values(by = ["URL", "LineID"], inplace = True)
 		
 		print(str(full_length - len(full_df)) + " in " + str(time.time() - starting))
@@ -464,9 +497,13 @@ class CC_Corpus(object):
 							current_df = [1, 2, 3, 4, 5]
 							
 						current_count += 1
-						os.makedirs(name = os.path.join(path_to_output, region, country_code), exist_ok = True)
-						name = os.path.join(path_to_output, region, country_code, region + "." + country_code + "." + nickname + "." + str(current_count) + ".hdf")
-						write_df.to_hdf(name, mode = "w", key = "data", format = "fixed", complevel = 9)	
+						name = os.path.join(region, country_code, region + "." + country_code + "." + nickname + "." + str(current_count) + ".hdf")
+						write_df.to_hdf("temp.hdf", mode = "w", key = "data", format = "fixed", complevel = 9)
+
+						s3 = boto3.resource("s3")
+						s3.meta.client.upload_file("temp.hdf", path_to_output, name)
+						os.remove("temp.hdf")
+						
 						print(country + ": " + str(len(write_df)))
 							
 						if len(current_df) < 1000:

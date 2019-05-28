@@ -423,7 +423,7 @@ class CC_Corpus(object):
 			
 		#segment_list = segment_list[0:49] #DELETE
 			
-		segment_list = ct.partition_all(10, segment_list)
+		segment_list = ct.partition_all(20, segment_list)
 		
 		full_list = []
 		
@@ -443,16 +443,19 @@ class CC_Corpus(object):
 					os.remove("temp.hdf")
 					
 					df_list.append(current_df)
+					del current_df
 						
 			#Done with subset
 			full_df = pd.concat(df_list)
+			del df_list
+			
 			print(len(full_df), end = "\t")
 			full_df.drop_duplicates(subset = "Text", keep = "first", inplace = True)
+			
 			print(len(full_df))
 			full_list.append(full_df)
 			
 			#Clean
-			del df_list
 			del full_df
 			
 		#Done with all files

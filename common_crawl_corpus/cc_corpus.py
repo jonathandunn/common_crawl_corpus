@@ -425,7 +425,7 @@ class CC_Corpus(object):
 			
 		segment_list = ct.partition_all(35, segment_list)
 		
-		full_list = []
+		full_first = True
 		
 		for subset in segment_list:
 		
@@ -446,24 +446,28 @@ class CC_Corpus(object):
 					del current_df
 						
 			#Done with subset
-			full_df = pd.concat(df_list)
+			new_df = pd.concat(df_list)
 			del df_list
 			
-			print(len(full_df), end = "\t")
-			full_df.drop_duplicates(subset = "Text", keep = "first", inplace = True)
+			if full_first == True:
+				full_df = new_df
+				full_first = False
+				print(len(full_df), end = "\t")
+				full_df.drop_duplicates(subset = "Text", keep = "first", inplace = True)
+				print(len(full_df))
 			
-			print(len(full_df))
-			full_list.append(full_df)
-			
+			else:
+				full_df = pd.concat([full_df, new_df])
+				print(len(full_df), end = "\t")
+				full_df.drop_duplicates(subset = "Text", keep = "first", inplace = True)
+				print(len(full_df))
+						
 			#Clean
-			del full_df
+			del new_df
 			
 		#Done with all files
-		print("Merging all files")
+		print("Final dedupe")
 		starting = time.time()
-		full_df = pd.concat(full_list)
-		del full_list
-		print("Done merging")
 		full_length = len(full_df)
 		full_df.drop_duplicates(subset = "Text", keep = "first", inplace = True)
 		print("Done deduplicating")

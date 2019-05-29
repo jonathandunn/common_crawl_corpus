@@ -210,7 +210,7 @@ class CC_Corpus(object):
 						for line in page.splitlines():
 							
 							#First cut, has to be 15 characters
-							if len(line) > 15:
+							if len(line) > 30:
 							
 								#Remove links, hashtags, at-mentions, mark-up, and "RT"
 								line = re.sub(r"http\S+", "", line)
@@ -229,25 +229,25 @@ class CC_Corpus(object):
 												)
 								
 								#Check if still above 15
-								if len(line) > 15:
+								if len(line) > 30:
 								
 									#Check if contains any navigational / boilerplate characters
 									if not any(char in line for char in illegal_chars):
 									
 										#Check if all numbers / characters
-										if len(ct.pipe(line, preprocessing.strip_numeric, preprocessing.strip_punctuation).replace(" ","")) > 12:
+										if len(ct.pipe(line, preprocessing.strip_numeric, preprocessing.strip_punctuation).replace(" ","")) > 20:
 																						
 											#Check if has Chinese / Japanese / Korean characters:
 											try:
 												if ad.is_cjk(line) or ad.is_hangul(line) or ad.is_hiragana(line) or ad.is_katakana(line):
-													length = 15
+													length = 30
 											
 												else:
-													length = 50
+													length = 75
 											
 											#Problem with character detection, default size
 											except:
-												length = 50
+												length = 75
 											
 											#Check length threshold
 											if len(line) > length:
@@ -379,6 +379,7 @@ class CC_Corpus(object):
 								
 								filename = segment.replace("/", ".") + "hdf"
 									
+								current_df.infer_objects()
 								current_df.to_hdf(filename, mode = "w", key = "data", format = "fixed", complevel = 9)
 								print("\tWrote " + filename)
 								

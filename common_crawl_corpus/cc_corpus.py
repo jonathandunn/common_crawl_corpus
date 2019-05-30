@@ -165,110 +165,118 @@ class CC_Corpus(object):
 
 	def process_wet(self, file, read_bucket):
 
-		starting = time.time()
-		line_list = []
-		
-		ad = AlphabetDetector()
-		client = boto3.client("s3")			
-		response = client.get_object(Bucket = read_bucket, Key = file)
-		
-		#List of illegal characters
-		illegal_chars = ["|", "©", "«", "®", "»", "˂", "˃", "˄", "˅", "/", "\\", "{", "}"]
-		
-		#Initialize emoji remover
 		try:
-			# Wide UCS-4 build
-			myre = re.compile(u'['
-				u'\U0001F300-\U0001F64F'
-				u'\U0001F680-\U0001F6FF'
-				u'\u2600-\u26FF\u2700-\u27BF]+', 
-				re.UNICODE)
-		except re.error:
-			# Narrow UCS-2 build
-			myre = re.compile(u'('
-				u'\ud83c[\udf00-\udfff]|'
-				u'\ud83d[\udc00-\ude4f\ude80-\udeff]|'
-				u'[\u2600-\u26FF\u2700-\u27BF])+', 
-				re.UNICODE)
-		
-		with gzip.open(response["Body"], "r") as stream:
-			for record in ArchiveIterator(stream):
-				if record.rec_type == "conversion":
+			starting = time.time()
+			line_list = []
+			
+			#For finding non-alphabet writing systems
+			ad = AlphabetDetector()
 				
-					current_url = record.rec_headers.get_header("WARC-Target-URI")
-					domains = tldextract.extract(current_url)
-					code = domains.suffix
+			#List of illegal characters
+			illegal_chars = ["|", "©", "«", "®", "»", "˂", "˃", "˄", "˅", "/", "\\", "{", "}"]
+			
+			#Initialize emoji remover
+			try:
+				# Wide UCS-4 build
+				myre = re.compile(u'['
+					u'\U0001F300-\U0001F64F'
+					u'\U0001F680-\U0001F6FF'
+					u'\u2600-\u26FF\u2700-\u27BF]+', 
+					re.UNICODE)
+			except re.error:
+				# Narrow UCS-2 build
+				myre = re.compile(u'('
+					u'\ud83c[\udf00-\udfff]|'
+					u'\ud83d[\udc00-\ude4f\ude80-\udeff]|'
+					u'[\u2600-\u26FF\u2700-\u27BF])+', 
+					re.UNICODE)
 					
+			client = boto3.client("s3")			
+			response = client.get_object(Bucket = read_bucket, Key = file)
+			
+			with gzip.open(response["Body"], "r") as stream:
+				for record in ArchiveIterator(stream):
+					if record.rec_type == "conversion":
 					
-					if code in self.country_codes:
-						page = record.content_stream().read().decode("utf-8")
+						current_url = record.rec_headers.get_header("WARC-Target-URI")
+						domains = tldextract.extract(current_url)
+						code = domains.suffix
 						
-						current_country = self.country_names[code]
-						current_region = self.country_regions[code]
-						line_number = 0
 						
-						for line in page.splitlines():
+						if code in self.country_codes:
+							page = record.content_stream().read().decode("utf-8")
 							
-							#First cut, has to be 15 characters
-							if len(line) > 15:
+							current_country = self.country_names[code]
+							current_region = self.country_regions[code]
+							line_number = 0
 							
-								#Remove links, hashtags, at-mentions, mark-up, and "RT"
-								line = re.sub(r"http\S+", "", line)
-								line = re.sub(r"@\S+", "", line)
-								line = re.sub(r"#\S+", "", line)
-								line = re.sub("<[^>]*>", "", line)
-													
-								#Remove emojis
-								line = re.sub(myre, "", line)
-														
-								#Remove extra spaces
-								line = ct.pipe(line, 
-												preprocessing.strip_tags, 
-												preprocessing.split_alphanum,
-												preprocessing.strip_multiple_whitespaces
-												)
+							for line in page.splitlines():
 								
-								#Check if still above 15
+								#First cut, has to be 15 characters
 								if len(line) > 15:
 								
-									#Check if contains any navigational / boilerplate characters
-									if not any(char in line for char in illegal_chars):
+									#Remove links, hashtags, at-mentions, mark-up, and "RT"
+									line = re.sub(r"http\S+", "", line)
+									line = re.sub(r"@\S+", "", line)
+									line = re.sub(r"#\S+", "", line)
+									line = re.sub("<[^>]*>", "", line)
+														
+									#Remove emojis
+									line = re.sub(myre, "", line)
+															
+									#Remove extra spaces
+									line = ct.pipe(line, 
+													preprocessing.strip_tags, 
+													preprocessing.split_alphanum,
+													preprocessing.strip_multiple_whitespaces
+													)
 									
-										#Check if all numbers / characters
-										if len(ct.pipe(line, preprocessing.strip_numeric, preprocessing.strip_punctuation).replace(" ","")) > 12:
-																						
-											#Check if has Chinese / Japanese / Korean characters:
-											try:
-												if ad.is_cjk(line) or ad.is_hangul(line) or ad.is_hiragana(line) or ad.is_katakana(line):
-													length = 15
-											
-												else:
+									#Check if still above 15
+									if len(line) > 15:
+									
+										#Check if contains any navigational / boilerplate characters
+										if not any(char in line for char in illegal_chars):
+										
+											#Check if all numbers / characters
+											if len(ct.pipe(line, preprocessing.strip_numeric, preprocessing.strip_punctuation).replace(" ","")) > 12:
+																							
+												#Check if has Chinese / Japanese / Korean characters:
+												try:
+													if ad.is_cjk(line) or ad.is_hangul(line) or ad.is_hiragana(line) or ad.is_katakana(line):
+														length = 15
+												
+													else:
+														length = 50
+												
+												#Problem with character detection, default size
+												except:
 													length = 50
-											
-											#Problem with character detection, default size
-											except:
-												length = 50
-											
-											#Check length threshold
-											if len(line) > length:
-											
-												#Final check for non-text
-												if line.count("-") < 4:
-													if line.count("(") < 4:
-														if line.count(")") < 4:
-															if line.count("=") < 2:
-																if line.count("_") < 2:
-																	if line.count(".") < 15:
-																		if line.count("&") < 4:
-																			if line.count("[") < 3:
-																				if line.count("]") < 3:
-																					if line.count("*") < 5:
-																						line_number += 1
-																						line_list.append((code, current_country, current_region, current_url, line_number, line))
-					
-		print("Loading " + str(file) + ": " + str(time.time() - starting))
+												
+												#Check length threshold
+												if len(line) > length:
+												
+													#Final check for non-text
+													if line.count("-") < 4:
+														if line.count("(") < 4:
+															if line.count(")") < 4:
+																if line.count("=") < 2:
+																	if line.count("_") < 2:
+																		if line.count(".") < 15:
+																			if line.count("&") < 4:
+																				if line.count("[") < 3:
+																					if line.count("]") < 3:
+																						if line.count("*") < 5:
+																							line_number += 1
+																							line_list.append((code, current_country, current_region, current_url, line_number, line))
+						
+			print("Loading " + str(file) + ": " + str(time.time() - starting))
 
-		return line_list
+			return line_list
+			
+		except Exception as e:
+			print(e)
+			print("process_wet aborted")
+			
 	#------------------------------------------------------------------------------------------------#
 
 	def crawl_cc(self, prefix_list, write_bucket, workers = 1):
@@ -346,7 +354,7 @@ class CC_Corpus(object):
 
 					file_list = []
 
-					try:
+					if True:
 
 						for item in response["Contents"]:
 							file_list.append(item["Key"])
@@ -356,7 +364,7 @@ class CC_Corpus(object):
 						#Loop over WET files in this segment
 						#Multi-process this part
 						
-						try:
+						if True:
 
 							line_list = []
 							
@@ -397,13 +405,7 @@ class CC_Corpus(object):
 										
 								#Remove from local instance
 								os.remove(filename)
-								
-						except Exception as e:
-							print(e)
-							
-					except Exception as e:
-							print(e)
-						
+														
 #----------------------------------------------------------------------------------------------------------------------#
 
 	def format_cc(self, nickname, path_to_input, path_to_output):

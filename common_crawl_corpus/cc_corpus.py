@@ -407,6 +407,7 @@ class CC_Corpus(object):
 										
 								#Remove from local instance
 								os.remove(filename)
+								del current_df
 														
 #----------------------------------------------------------------------------------------------------------------------#
 

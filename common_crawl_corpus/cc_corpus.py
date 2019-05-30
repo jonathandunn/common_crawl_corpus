@@ -305,8 +305,10 @@ class CC_Corpus(object):
 				prefix_check = prefix_check[1]
 
 				#Check if this segment has already been processed
-				filename = segment.replace("/", ".") + "wet.hdf"
-				print("\n\n\t" + filename)
+				filename1 = segment.replace("/", ".") + "wet.hdf"
+				filename2 = segment.replace("/", ".") + "wet.p"
+				print("\n\t" + filename1)
+				print("\t" + filename2)
 
 				#Check S3 bucket
 				check_list = []
@@ -318,12 +320,15 @@ class CC_Corpus(object):
 				except:
 					check_list = []
 
-				if current_folder + "/" + filename in check_list:
-					print("Already exists on s3 bucket: " + str(filename))
+				if current_folder + "/" + filename1 in check_list:
+					print("Already exists on s3 bucket: " + str(filename1))
+					
+				elif current_folder + "/" + filename2 in check_list:
+					print("Already exists on s3 bucket: " + str(filename2))
 					
 				else:
 				
-					print("\t" + current_folder + "/" + filename + " does not exist yet.")
+					print("\t" + current_folder + "/" + filename1 + " does not exist yet.")
 
 					#Script initialization  --------------------------------#
 					country_flag = 0

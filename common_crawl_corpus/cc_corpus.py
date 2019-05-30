@@ -329,6 +329,7 @@ class CC_Corpus(object):
 				else:
 				
 					print("\t" + current_folder + "/" + filename1 + " does not exist yet.")
+					print("\t" + current_folder + "/" + filename2 + " does not exist yet.")
 
 					#Script initialization  --------------------------------#
 					country_flag = 0

@@ -277,6 +277,7 @@ class CC_Corpus(object):
 			print(e)
 			print("process_wet aborted")
 			
+			return []
 	#------------------------------------------------------------------------------------------------#
 
 	def crawl_cc(self, prefix_list, write_bucket, workers = 1):
@@ -379,6 +380,7 @@ class CC_Corpus(object):
 							print("Done " + str(len(line_list)))
 
 							#Done getting lines, now dedupe
+							line_list = [item for item in line_list if item is not None]
 							line_list = [item for sublist in line_list for item in sublist]
 							current_df = pd.DataFrame(line_list)
 							line_list = []

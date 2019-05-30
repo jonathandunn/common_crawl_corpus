@@ -537,7 +537,12 @@ class CC_Corpus(object):
 							
 						if len(current_df) < 1000:
 							break	
-							
+			
+
+		del current_df
+		del full_df
+		
+		return
 	#------------------------------------------------------------------------------------------------------------#
 	
 	def load_df(self, file):

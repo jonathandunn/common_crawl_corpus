@@ -4,7 +4,6 @@ from cc_corpus import CC_Corpus
 cc = CC_Corpus()
 
 nicknames = [
-			"CC-MAIN-2013-20",
 			"CC-MAIN-2013-48",
 			"CC-MAIN-2014-10",
 			"CC-MAIN-2014-15",

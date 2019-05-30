@@ -210,7 +210,7 @@ class CC_Corpus(object):
 						for line in page.splitlines():
 							
 							#First cut, has to be 15 characters
-							if len(line) > 30:
+							if len(line) > 15:
 							
 								#Remove links, hashtags, at-mentions, mark-up, and "RT"
 								line = re.sub(r"http\S+", "", line)
@@ -229,25 +229,25 @@ class CC_Corpus(object):
 												)
 								
 								#Check if still above 15
-								if len(line) > 30:
+								if len(line) > 15:
 								
 									#Check if contains any navigational / boilerplate characters
 									if not any(char in line for char in illegal_chars):
 									
 										#Check if all numbers / characters
-										if len(ct.pipe(line, preprocessing.strip_numeric, preprocessing.strip_punctuation).replace(" ","")) > 20:
+										if len(ct.pipe(line, preprocessing.strip_numeric, preprocessing.strip_punctuation).replace(" ","")) > 12:
 																						
 											#Check if has Chinese / Japanese / Korean characters:
 											try:
 												if ad.is_cjk(line) or ad.is_hangul(line) or ad.is_hiragana(line) or ad.is_katakana(line):
-													length = 30
+													length = 15
 											
 												else:
-													length = 75
+													length = 50
 											
 											#Problem with character detection, default size
 											except:
-												length = 75
+												length = 50
 											
 											#Check length threshold
 											if len(line) > length:
@@ -377,10 +377,10 @@ class CC_Corpus(object):
 								current_df.drop_duplicates(subset = "Text", keep = False, inplace = True)
 								print("Formatted and Removed " + str(starting_length - len(current_df)) + " with total: " + str(len(current_df)))
 								
-								filename = segment.replace("/", ".") + "hdf"
+								filename = segment.replace("/", ".") + "p"
 									
 								current_df.infer_objects()
-								current_df.to_hdf(filename, mode = "w", key = "data", format = "fixed", complevel = 9)
+								current_df.to_pickle(filename,compression = "gzip", protocol = 4)
 								print("\tWrote " + filename)
 								
 								#Write to S3
@@ -435,13 +435,23 @@ class CC_Corpus(object):
 			for filename in subset:
 				
 				#Open hdf
-				if filename.endswith(".wet.hdf"): 
+				if filename.endswith(".wet.hdf"):
+					temp_name = "temp.hdf"
+				elif filename.endswith(".wet.p"):
+					temp_name = "temp.p"
+				
+				if filename.endswith(".hdf") or filename.endswith(".p"):
 				
 					print(filename)
 					s3 = boto3.resource("s3")
-					s3.meta.client.download_file(path_to_input, filename, "temp.hdf")
-					current_df = pd.read_hdf("temp.hdf", key = "data")
-					os.remove("temp.hdf")
+					s3.meta.client.download_file(path_to_input, filename, temp_name)
+					
+					if temp_name.endswith(".hdf"):
+						current_df = pd.read_hdf(temp_name, key = "data")
+					elif temp_name.endswith(".p"):
+						current_df = pd.read_pickle(temp_name, compression = "infer")
+					
+					os.remove(temp_name)
 					
 					df_list.append(current_df)
 					del current_df

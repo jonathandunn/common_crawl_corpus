@@ -1,10 +1,6 @@
 from cc_corpus import CC_Corpus
 
-#Initialize
-cc = CC_Corpus()
-
 nicknames = [
-			"CC-MAIN-2013-48",
 			"CC-MAIN-2014-10",
 			"CC-MAIN-2014-15",
 			"CC-MAIN-2014-23",
@@ -17,4 +13,9 @@ nicknames = [
 			
 #Run
 for nickname in nicknames:
+
+	#Initialize
+	cc = CC_Corpus()
+	
+	#Run
 	cc.format_cc(nickname, "ccglu1", "ccglu2")

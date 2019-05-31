@@ -538,7 +538,7 @@ class CC_Corpus(object):
 						if len(current_df) < 1000:
 							break	
 			
-
+		print("Ending!")
 		del current_df
 		del full_df
 		

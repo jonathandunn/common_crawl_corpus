@@ -165,6 +165,23 @@ class CC_Corpus(object):
 
 	def process_wet(self, file, read_bucket):
 
+		#Initialize emoji remover
+		try:
+			# Wide UCS-4 build
+			myre = re.compile(u'['
+				u'\U0001F300-\U0001F64F'
+				u'\U0001F680-\U0001F6FF'
+				u'\u2600-\u26FF\u2700-\u27BF]+', 
+				re.UNICODE)
+		except re.error:
+			# Narrow UCS-2 build
+			myre = re.compile(u'('
+				u'\ud83c[\udf00-\udfff]|'
+				u'\ud83d[\udc00-\ude4f\ude80-\udeff]|'
+				u'[\u2600-\u26FF\u2700-\u27BF])+', 
+				re.UNICODE)
+		
+		#Do stuff
 		try:
 			starting = time.time()
 			line_list = []
@@ -175,22 +192,6 @@ class CC_Corpus(object):
 			#List of illegal characters
 			illegal_chars = ["|", "©", "«", "®", "»", "˂", "˃", "˄", "˅", "/", "\\", "{", "}"]
 			
-			#Initialize emoji remover
-			try:
-				# Wide UCS-4 build
-				myre = re.compile(u'['
-					u'\U0001F300-\U0001F64F'
-					u'\U0001F680-\U0001F6FF'
-					u'\u2600-\u26FF\u2700-\u27BF]+', 
-					re.UNICODE)
-			except re.error:
-				# Narrow UCS-2 build
-				myre = re.compile(u'('
-					u'\ud83c[\udf00-\udfff]|'
-					u'\ud83d[\udc00-\ude4f\ude80-\udeff]|'
-					u'[\u2600-\u26FF\u2700-\u27BF])+', 
-					re.UNICODE)
-					
 			client = boto3.client("s3")			
 			response = client.get_object(Bucket = read_bucket, Key = file)
 			
@@ -269,6 +270,8 @@ class CC_Corpus(object):
 																							line_number += 1
 																							line_list.append((code, current_country, current_region, current_url, line_number, line))
 						
+			del response
+			
 			print("Loading " + str(file) + ": " + str(time.time() - starting))
 
 			return line_list
@@ -369,7 +372,7 @@ class CC_Corpus(object):
 
 							line_list = []
 							
-							pool_instance = mp.Pool(processes = workers, maxtasksperchild = None)
+							pool_instance = mp.Pool(processes = workers, maxtasksperchild = 1)
 							line_list = pool_instance.map(partial(self.process_wet,
 													read_bucket = read_bucket
 													), file_list, chunksize = 1)

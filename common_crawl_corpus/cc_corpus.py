@@ -436,9 +436,7 @@ class CC_Corpus(object):
 		for item in response["Contents"]:
 			segment_list.append(item["Key"])
 			
-		#segment_list = segment_list[0:49] #DELETE
-			
-		segment_list = ct.partition_all(35, segment_list)
+		segment_list = ct.partition_all(50, segment_list)
 		
 		full_first = True
 		
@@ -457,8 +455,10 @@ class CC_Corpus(object):
 				if filename.endswith(".hdf") or filename.endswith(".p"):
 				
 					print(filename)
-					s3 = boto3.resource("s3")
-					s3.meta.client.download_file(path_to_input, filename, temp_name)
+					s3 = boto3.client("s3")
+					
+					with open(temp_name, "wb") as data:
+						s3.download_fileobj(path_to_input, filename, data)
 					
 					if temp_name.endswith(".hdf"):
 						current_df = pd.read_hdf(temp_name, key = "data")

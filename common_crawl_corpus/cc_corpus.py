@@ -399,7 +399,7 @@ class CC_Corpus(object):
 								filename = segment.replace("/", ".") + "p"
 									
 								current_df.infer_objects()
-								current_df.to_pickle(filename,compression = "gzip", protocol = 4)
+								current_df.to_pickle(filename, compression = "gzip", protocol = 4)
 								print("\tWrote " + filename)
 								
 								#Write to S3
@@ -463,7 +463,7 @@ class CC_Corpus(object):
 					if temp_name.endswith(".hdf"):
 						current_df = pd.read_hdf(temp_name, key = "data")
 					elif temp_name.endswith(".p"):
-						current_df = pd.read_pickle(temp_name, compression = "infer")
+						current_df = pd.read_pickle(temp_name, compression = "gzip")
 					
 					os.remove(temp_name)
 					

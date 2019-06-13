@@ -399,7 +399,7 @@ class CC_Corpus(object):
 								filename = segment.replace("/", ".") + "p"
 									
 								current_df.infer_objects()
-								current_df.to_pickle(filename, compression = "gzip", protocol = 4)
+								current_df.to_pickle(filename,compression = "gzip", protocol = 4)
 								print("\tWrote " + filename)
 								
 								#Write to S3
@@ -436,7 +436,9 @@ class CC_Corpus(object):
 		for item in response["Contents"]:
 			segment_list.append(item["Key"])
 			
-		segment_list = ct.partition_all(50, segment_list)
+		#segment_list = segment_list[0:49] #DELETE
+			
+		segment_list = ct.partition_all(4, segment_list)
 		
 		full_first = True
 		
@@ -455,15 +457,13 @@ class CC_Corpus(object):
 				if filename.endswith(".hdf") or filename.endswith(".p"):
 				
 					print(filename)
-					s3 = boto3.client("s3")
-					
-					with open(temp_name, "wb") as data:
-						s3.download_fileobj(path_to_input, filename, data)
+					s3 = boto3.resource("s3")
+					s3.meta.client.download_file(path_to_input, filename, temp_name)
 					
 					if temp_name.endswith(".hdf"):
 						current_df = pd.read_hdf(temp_name, key = "data")
 					elif temp_name.endswith(".p"):
-						current_df = pd.read_pickle(temp_name, compression = "gzip")
+						current_df = pd.read_pickle(temp_name, compression = "infer")
 					
 					os.remove(temp_name)
 					

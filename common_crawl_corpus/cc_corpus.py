@@ -414,7 +414,7 @@ class CC_Corpus(object):
 														
 #----------------------------------------------------------------------------------------------------------------------#
 
-	def format_cc(self, nickname, path_to_input, path_to_output):
+	def format_cc(self, nickname, path_to_input, path_to_output, n_segments = 10):
 	
 		#Load crawl files from S3 bucket, merge and dedupe, and save to local drive
 		#This process should be run on a large machine (much memory) but doesn't take long
@@ -436,7 +436,7 @@ class CC_Corpus(object):
 		for item in response["Contents"]:
 			segment_list.append(item["Key"])
 			
-		segment_list = ct.partition_all(4, segment_list)
+		segment_list = ct.partition_all(n_segments, segment_list)
 		
 		full_first = True
 		

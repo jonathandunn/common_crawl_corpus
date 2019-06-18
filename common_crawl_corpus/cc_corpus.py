@@ -471,9 +471,11 @@ class CC_Corpus(object):
 					del current_df
 						
 			#Done with subset
+			print("\tJoining subset files: " + str(len(df_list)))
 			new_df = pd.concat(df_list)
 			del df_list
 			
+			print("\tDone joining. Now deduping.")
 			if full_first == True:
 				full_df = new_df
 				full_first = False

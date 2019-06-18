@@ -439,6 +439,8 @@ class CC_Corpus(object):
 		segment_list = ct.partition_all(n_segments, segment_list)
 		
 		full_first = True
+		round_counter = 1
+		round_list = []
 		
 		for subset in segment_list:
 		
@@ -476,23 +478,35 @@ class CC_Corpus(object):
 			del df_list
 			
 			print("\tDone joining. Now deduping.")
-			if full_first == True:
-				full_df = new_df
-				full_first = False
-				print(len(full_df), end = "\t")
-				full_df.drop_duplicates(subset = "Text", keep = "first", inplace = True)
-				print(len(full_df))
+			if True:
+				
+				print(len(new_df), end = "\t")
+				new_df.drop_duplicates(subset = "Text", keep = "first", inplace = True)
+				print(len(new_df))
 			
-			else:
-				full_df = pd.concat([full_df, new_df])
-				print(len(full_df), end = "\t")
-				full_df.drop_duplicates(subset = "Text", keep = "first", inplace = True)
-				print(len(full_df))
-						
-			#Clean
-			del new_df
+				#Clean
+				name = "round." + str(round_counter) + ".p"
+				round_counter += 1
+				round_list.append(name)
+				new_df.to_pickle(name, compression = None, protocol = 4)
+				del new_df
 			
 		#Done with all files
+		print("Loading partial files")
+		for file in round_list:
+			print(file)
+			
+			if full_first == True:
+				full_first = False
+				full_df = pd.read_pickle(file, protocol = 4)
+				print("\tLength: " + str(len(full_df)))
+				
+			else:
+				temp_df = pd.read_pickle(file, protocol = 4)
+				full_df = pd.concat([full_df, temp_df])
+				del temp_df
+				print("\tLength: " + str(len(full_df)))
+			
 		print("Final dedupe")
 		starting = time.time()
 		full_length = len(full_df)
@@ -515,6 +529,7 @@ class CC_Corpus(object):
 				query_string = '(Country == "' + str(country) + '")'
 				current_df = full_df.query(query_string)
 				current_df.infer_objects()
+				current_df.sort_values(by = ["URL", "LineID"], inplace = True)
 					
 				if len(current_df) > 1000:
 					

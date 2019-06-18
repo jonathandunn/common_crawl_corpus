@@ -425,382 +425,90 @@ class CC_Corpus(object):
 		client = boto3.client("s3")
 		read_bucket = path_to_input
 
-		response = client.list_objects_v2(
-				Delimiter = "/",
-				Bucket = read_bucket,
-				Prefix = nickname + "/"
-				)
-
-		segment_list = []
-
-		for item in response["Contents"]:
-			segment_list.append(item["Key"])
+		#FIX
+		segment_list = ["round.1.p", "round.2.p", "round.3.p", "round.4.p", "round.5.p", "round.6.p", "round.7.p", "round.8.p", "round.9.p"]
+		segment_list = list(ct.partition_all(n_segments, segment_list))
+		
+		for i in range(len(segment_list)):
+		
+			round_list = segment_list[i]
+			nickname_write = nickname + "." + str(i)
+			full_first = True
 			
-		segment_list = ct.partition_all(n_segments, segment_list)
-		
-		full_first = True
-		round_counter = 1
-		round_list = []
-		
-		for subset in segment_list:
-		
-			df_list = []
+			print("Loading partial files")
+			for file in round_list:
+				print(file)
+				
+				if full_first == True:
+					full_first = False
+					full_df = pd.read_pickle(file)
+					print("\tLength: " + str(len(full_df)))
+					
+				else:
+					temp_df = pd.read_pickle(file)
+					full_df = pd.concat([full_df, temp_df])
+					del temp_df
+					print("\tLength: " + str(len(full_df)))
+				
+			print("Final dedupe")
+			starting = time.time()
+			full_length = len(full_df)
+			full_df.drop_duplicates(subset = "Text", keep = "first", inplace = True)
+			print("Done deduplicating")
+			full_df.sort_values(by = ["URL", "LineID"], inplace = True)
 			
-			for filename in subset:
-				
-				#Open hdf
-				if filename.endswith(".wet.hdf"):
-					temp_name = "temp.hdf"
-				elif filename.endswith(".wet.p"):
-					temp_name = "temp.p"
-				
-				if filename.endswith(".hdf") or filename.endswith(".p"):
-				
-					print(filename)
-					s3 = boto3.client("s3")
+			print(str(full_length - len(full_df)) + " in " + str(time.time() - starting))
+			print("Now: " + str(len(full_df)))
+
+			#Now save country-specific files
+			reverse = {v: k for k, v in self.country_names.items()}
+			for country in reverse:
+			
+				country_code = reverse[country]	
+
+				if country_code in self.country_regions:
+					region = self.country_regions[country_code]
 					
-					with open(temp_name, "wb") as data:
-						s3.download_fileobj(path_to_input, filename, data)
-					
-					if temp_name.endswith(".hdf"):
-						current_df = pd.read_hdf(temp_name, key = "data")
-					elif temp_name.endswith(".p"):
-						current_df = pd.read_pickle(temp_name, compression = "gzip")
-					
-					os.remove(temp_name)
-					
-					df_list.append(current_df)
-					del current_df
+					query_string = '(Country == "' + str(country) + '")'
+					current_df = full_df.query(query_string)
+					current_df.infer_objects()
+					current_df.sort_values(by = ["URL", "LineID"], inplace = True)
 						
-			#Done with subset
-			print("\tJoining subset files: " + str(len(df_list)))
-			new_df = pd.concat(df_list)
-			del df_list
-			
-			print("\tDone joining. Now deduping.")
-			if True:
-				
-				print(len(new_df), end = "\t")
-				new_df.drop_duplicates(subset = "Text", keep = "first", inplace = True)
-				print(len(new_df))
-			
-				#Clean
-				name = "round." + str(round_counter) + ".p"
-				round_counter += 1
-				round_list.append(name)
-				new_df.to_pickle(name, compression = None, protocol = 4)
-				del new_df
-			
-		#Done with all files
-		print("Loading partial files")
-		for file in round_list:
-			print(file)
-			
-			if full_first == True:
-				full_first = False
-				full_df = pd.read_pickle(file)
-				print("\tLength: " + str(len(full_df)))
-				
-			else:
-				temp_df = pd.read_pickle(file)
-				full_df = pd.concat([full_df, temp_df])
-				del temp_df
-				print("\tLength: " + str(len(full_df)))
-			
-		print("Final dedupe")
-		starting = time.time()
-		full_length = len(full_df)
-		full_df.drop_duplicates(subset = "Text", keep = "first", inplace = True)
-		print("Done deduplicating")
-		full_df.sort_values(by = ["URL", "LineID"], inplace = True)
-		
-		print(str(full_length - len(full_df)) + " in " + str(time.time() - starting))
-		print("Now: " + str(len(full_df)))
-
-		#Now save country-specific files
-		reverse = {v: k for k, v in self.country_names.items()}
-		for country in reverse:
-		
-			country_code = reverse[country]	
-
-			if country_code in self.country_regions:
-				region = self.country_regions[country_code]
-				
-				query_string = '(Country == "' + str(country) + '")'
-				current_df = full_df.query(query_string)
-				current_df.infer_objects()
-					
-				if len(current_df) > 1000:
-					
-					current_count = 0	#For counting millions of samples
+					if len(current_df) > 1000:
 						
-					while True:
-						
-						if len(current_df) > 1000000:
-							write_df = current_df.head(n = 1000000)
-							current_df = current_df.tail(n = len(current_df) - 1000000)
+						current_count = 0	#For counting millions of samples
 							
-						else:
-							write_df = current_df
-							current_df = [1, 2, 3, 4, 5]
+						while True:
 							
-						current_count += 1
-						name = os.path.join(region, country_code, region + "." + country_code + "." + nickname + "." + str(current_count) + ".hdf")
-						write_df.to_hdf("temp.hdf", mode = "w", key = "data", format = "fixed", complevel = 9)
+							if len(current_df) > 1000000:
+								write_df = current_df.head(n = 1000000)
+								current_df = current_df.tail(n = len(current_df) - 1000000)
+								
+							else:
+								write_df = current_df
+								current_df = [1, 2, 3, 4, 5]
+								
+							current_count += 1
+							name = os.path.join(region, country_code, region + "." + country_code + "." + nickname_write + "." + str(current_count) + ".hdf")
+							write_df.to_hdf("temp.hdf", mode = "w", key = "data", format = "fixed", complevel = 9)
 
-						s3 = boto3.resource("s3")
-						s3.meta.client.upload_file("temp.hdf", path_to_output, name)
-						os.remove("temp.hdf")
-						
-						print(country + ": " + str(len(write_df)))
+							s3 = boto3.resource("s3")
+							s3.meta.client.upload_file("temp.hdf", path_to_output, name)
+							os.remove("temp.hdf")
 							
-						if len(current_df) < 1000:
-							break	
+							print(country + ": " + str(len(write_df)))
+								
+							if len(current_df) < 1000:
+								break	
 			
-		print("Ending!")
-		del current_df
-		del full_df
-		
+
 		return
 	#------------------------------------------------------------------------------------------------------------#
 	
-	def load_df(self, file):
+from fix import CC_Corpus
 
-		if file.endswith(".hdf"):
-			current_df = pd.read_hdf(file)
-		
-		elif file.endswith(".p"):
-			current_df = pd.read_pickle(file, compression = "gzip")
-			
-		#Cap length of current_df
-		if len(current_df) > 3000000:
-			current_df = current_df.sample(n = 3000000, replace = False)
-		
-		return current_df
-		#------------------------------------------------
-
-	def get_metadata(self, filename):
-
-		#Break path
-		items = filename.split(".")
-
-		region = items[0]
-		country = items[1]
-		period = items[2]
-		
-		return region, country, period
-	#------------------------------------------------
-
-	def get_lid_df(self, lid, current_df):
-
-		try:
-			current_text = list(current_df.loc[:,"Text"].values)
-			y = lid.predict(current_text)
-			
-			current_df.loc[:,"Lang"] = y
-			
-			return current_df
-			
-		except:
-			return None
-	#------------------------------------------------
+#Initialize
+cc = CC_Corpus()
 	
-	def lid_cc(self, input_dir, output_dir, lid_model):
-	
-		#Run lidNet on the corpus
-		
-		#Constants
-		from pathlib import Path
-		from lidNet.lidNet.lidNet import lidNet
-		lid = lidNet(lid_model)	
-
-		segment_list = []
-		for root, dirs, files in os.walk(input_dir):
-			segment_list += files
-
-		#Iterate over country files in current time period
-		for file in segment_list:
-			
-			region, country, period = self.get_metadata(file)
-			file = os.path.join(".", region, country, file)
-			print("\tStarting " + str(file), end = "")		
-			
-			if file.endswith(".hdf"):
-				write_name = "temp.hdf"
-			elif file.endswith(".p"):
-				write_name = "temp.p"
-
-			#Download, open, and delete temp file
-			current_df = self.load_df(file)
-			os.remove(file)
-						
-			print(" with " + str(len(current_df)) + " samples")
-			current_df = self.get_lid_df(lid, current_df)
-			
-			try:
-				#Get langs present, preset the S3 path
-				langs = list(set(list(current_df.loc[:,"Lang"].values)))
-								
-				for lang in langs:
-							
-					#Reduce to lang-specific df
-					query_string = "(Lang == '" + lang + "')"
-					lang_df = current_df.query(query_string)
-								
-					#Write to S3
-					if not os.path.isdir(os.path.join(".", output_dir, region, country)):
-						path = Path(os.path.join(".", output_dir, region, country))
-						path.mkdir(parents=True)
-					write_filename = os.path.join(".", output_dir, region, country, region + "." + country + "." + period + "." + lang + ".hdf")
-								
-					#Write to disk
-					lang_df.to_hdf(write_filename, key = "data", mode = "w", format = "fixed", complevel = 9, complib = "zlib")
-					
-			except Exception as e:
-				print("\n\n")
-				print("Skipping " + file)
-				print(e)
-				print("\n\n")
-					
-	#--------------------------------------------------------------------
-	
-	def get_text(self, full_df):
-	
-		full_text = []
-		text = list(full_df.loc[:,"Text"].values)
-		
-		word_counter = 0
-		temp_string = ""
-		
-		for sample in text:
-			for word in sample.split(" "):
-				
-				word_counter += 1
-				temp_string += word + " "
-				
-				if word_counter >= 100:
-					full_text.append(temp_string[:-1])
-					word_counter = 0
-					temp_string = ""
-				
-		return full_text
-	#--------------------------------------------------------------------
-	
-	def write_text(self, full_text, write_dir, write_filename):
-	
-		pathlib.Path(write_dir).mkdir(parents = True, exist_ok = True)
-		
-		random.shuffle(full_text)
-	
-		with codecs.open(os.path.join(write_dir, write_filename), "w", encoding = "utf-8", errors = "replace") as fo:
-			for line in full_text:
-				fo.write(str(line))
-				fo.write("\n")
-				
-	#--------------------------------------------------------------------
-	
-	def zip_dir(self, region):
-	
-		print("\nWriting to zip file.\n")
-		path = os.path.join(".", region)	
-		zipf = zipfile.ZipFile(region + ".zip", "w", zipfile.ZIP_DEFLATED)
-		
-		for root, dirs, files in os.walk(path):
-			for file in files:
-				zipf.write(os.path.join(root, file))
-	
-	#-------------------------------------------------------------------
-	
-	def final_cc(self, path_to_input):
-	
-		from collections import defaultdict
-		
-		#Load crawl files from local drive, merge and dedupe, and save to local drive
-		#This process should be run on a large machine but doesn't take long
-		#Use AWS-CLI to upload files in path_to_output to S3 if desired
-	
-		#---- Iterate over files
-		print("")
-		
-		segment_list = []
-		merge_dict = defaultdict(dict)
-		
-		for root, dirs, files in os.walk(path_to_input):
-			segment_list += files
-
-		for file in segment_list:
-			print("Starting " + file)
-			
-			meta = file.split(".")
-			region = meta[0]
-			country = meta[1]
-			period = meta[2]
-			language = meta[3]
-			
-			try:
-				merge_dict[country][language].append(file)
-			except:
-				merge_dict[country][language] = [file]
-			
-		for country in merge_dict:
-			for language in merge_dict[country]:
-				
-				
-				first_flag = True	#Whether to initialize holder file
-				
-				for file in merge_dict[country][language]:
-					
-					print(file)
-					filename = os.path.join(path_to_input, region, country, file)
-
-					#Open hdf
-					if filename.endswith(".hdf"): 
-						
-						print("\t\t" + filename)
-						
-						try:
-							current_df = pd.read_hdf(filename)
-								
-							if first_flag == True:
-								full_df = current_df
-								first_flag = False
-									
-							else:
-								full_df = pd.concat([full_df, current_df])
-							
-							# #Or, open pickles
-							if filename.endswith(".p"): 
-							
-								print("\t\t" + filename)
-								current_df = pd.read_pickle(filename, compression = "gzip")
-								
-								if first_flag == True:
-									full_df = current_df
-									first_flag = False
-									
-								else:
-									full_df = pd.concat([full_df, current_df])
-						
-						except Exception as e:
-							print(e)
-					
-				#Dedupe once all country/language files have been added
-				starting = time.time()
-				try:
-					full_length = len(full_df)
-					full_df.drop_duplicates(subset = "Text", keep = "first", inplace = True)
-
-					print("Total: " + str(len(full_df)) + ", after removing " + str((full_length - len(full_df))) + " in " + str(time.time() - starting))
-					full_text = self.get_text(full_df)
-					del full_df
-					
-					if len(full_text) > 500:
-						write_dir = os.path.join(".", region, country)
-						write_filename = "cc-gdc." + region + "." + country + "." + language + ".txt"
-						self.write_text(full_text, write_dir, write_filename)
-				
-				except Exception as e:
-					print(e)
-
-		# #Now zip entire directory
-		# self.zip_dir(region)
+#Run
+cc.format_cc("CC-MAIN-2016-50", "ccglu1", "ccglu2", 3)

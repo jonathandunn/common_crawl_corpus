@@ -469,6 +469,11 @@ class CC_Corpus(object):
 					
 					os.remove(temp_name)
 					
+					#Remove unneeded countries
+					print("\t\tBefore removing countries over threshold: " + str(len(current_df)))
+					current_df = current_df[~current_df["Country"].isin(["Canada", "Russia", "Germany", "France", "Italy"])]
+					print("\t\tBefore after countries over threshold: " + str(len(current_df)))
+					
 					df_list.append(current_df)
 					del current_df
 						

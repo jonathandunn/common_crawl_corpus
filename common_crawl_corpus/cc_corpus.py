@@ -491,7 +491,9 @@ class CC_Corpus(object):
 											"Portugal",
 											"Romania",
 											"Ukraine",
-											"Hungary"
+											"Hungary",
+											"Vietnam",
+											"Iran"
 											]
 					
 					print("\t\tBefore removing countries over threshold: " + str(len(current_df)))

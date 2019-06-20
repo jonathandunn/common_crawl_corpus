@@ -470,8 +470,32 @@ class CC_Corpus(object):
 					os.remove(temp_name)
 					
 					#Remove unneeded countries
+					country_done_list = ["Canada", 
+											"Russia", 
+											"Germany", 
+											"France", 
+											"Italy",
+											"Japan",
+											"Sweden",
+											"Spain",
+											"Netherlands",
+											"Switzerland",
+											"Czechia",
+											"Poland",
+											"Austria",
+											"Belgium",
+											"Denmark",
+											"Finland",
+											"Ireland",
+											"Greece",
+											"Portugal",
+											"Romania",
+											"Ukraine",
+											"Hungary"
+											]
+					
 					print("\t\tBefore removing countries over threshold: " + str(len(current_df)))
-					current_df = current_df[~current_df["Country"].isin(["Canada", "Russia", "Germany", "France", "Italy"])]
+					current_df = current_df[~current_df["Country"].isin(country_done_list)]
 					print("\t\tBefore after countries over threshold: " + str(len(current_df)))
 					
 					df_list.append(current_df)

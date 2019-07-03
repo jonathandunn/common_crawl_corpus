@@ -18,9 +18,70 @@ from warcio.archiveiterator import ArchiveIterator
 from alphabet_detector import AlphabetDetector
 from gensim.parsing import preprocessing
 
+#---------------------
+
+def process_lid(segment, input_dir, output_dir):
+
+	#Check if file has been processed
+	check = segment.replace("/",".").replace(".hdf",".txt")
+	
+	if check not in list(os.listdir(os.path.join(".", "check"))):
+	
+		print("Starting " + segment)
+		from lid.lidNet.lidNet import lidNet
+		lid = lidNet(os.path.join("lid", "lidNet", "Models", "Model.LID.MLP.400kx3_hash.1-3grams.262k.hdf"))
+	
+		#Load and prepare
+		current_df = pd.read_hdf(segment, key = "data")
+		
+		#Get meta-data
+		meta = current_df.iloc[1,]
+		current_country = meta["Country"]
+		current_region = meta["Region"]
+
+		#Get time
+		section = segment.split(".")[2:]
+		current_time = ".".join(section).replace(".hdf","").replace("CC-MAIN-","")
+		current_time_write = current_time
+		current_time = current_time[:7]
+		
+		text_list = []	#Initialize
+		
+		#Join texts by webpage
+		for section in current_df.groupby(by = "URL"):
+
+			current_url = str(section[0])
+			text = section[1].Text.values
+			text = str("\n".join(text))
+			current_size = len(text.split())
+			
+			text_list += [(current_time, current_url, current_size, text)]
+
+		current_df = pd.DataFrame(text_list, columns = ["Time", "URL", "N_Words", "Text"])
+		current_df.loc[:,"Language"] = lid.predict(list(current_df.loc[:,"Text"].values))
+
+		for section in current_df.groupby(by = "Language"):
+
+			current_lang = str(section[0])
+			write_name = current_region + "." + current_country + "." + current_lang + "." + current_time_write
+			os.makedirs(os.path.join(output_dir, current_region, current_country, current_lang), exist_ok = True)
+			write_name = os.path.join(output_dir, current_region, current_country, current_lang, write_name)
+			section = section[1]
+			section.to_csv(write_name + ".gz", header = True, index = False, index_label = False, compression = "gzip")
+		
+		#Done with all langs
+		with open(os.path.join("check", check), "w") as fo:
+			fo.write("Done")
+			
+		return
+#--------------------
+
 class CC_Corpus(object):
 
-	def __init__(self):
+	def __init__(self, countries_to_skip = []):
+	
+		#Ignore certain countries if there is already enough data
+		self.countries_to_skip = countries_to_skip
 	
 		#This list defines what countries to include in the corpus
 		self.country_codes = [
@@ -470,31 +531,7 @@ class CC_Corpus(object):
 					os.remove(temp_name)
 					
 					#Remove unneeded countries
-					country_done_list = ["Canada", 
-											"Russia", 
-											"Germany", 
-											"France", 
-											"Italy",
-											"Japan",
-											"Sweden",
-											"Spain",
-											"Netherlands",
-											"Switzerland",
-											"Czechia",
-											"Poland",
-											"Austria",
-											"Belgium",
-											"Denmark",
-											"Finland",
-											"Ireland",
-											"Greece",
-											"Portugal",
-											"Romania",
-											"Ukraine",
-											"Hungary",
-											"Vietnam",
-											"Iran"
-											]
+					country_done_list = self.countries_to_skip
 					
 					print("\t\tBefore removing countries over threshold: " + str(len(current_df)))
 					current_df = current_df[~current_df["Country"].isin(country_done_list)]
@@ -595,243 +632,76 @@ class CC_Corpus(object):
 		return
 	#------------------------------------------------------------------------------------------------------------#
 	
-	def load_df(self, file):
-
-		if file.endswith(".hdf"):
-			current_df = pd.read_hdf(file)
-		
-		elif file.endswith(".p"):
-			current_df = pd.read_pickle(file, compression = "gzip")
-			
-		#Cap length of current_df
-		if len(current_df) > 3000000:
-			current_df = current_df.sample(n = 3000000, replace = False)
-		
-		return current_df
-		#------------------------------------------------
-
-	def get_metadata(self, filename):
-
-		#Break path
-		items = filename.split(".")
-
-		region = items[0]
-		country = items[1]
-		period = items[2]
-		
-		return region, country, period
-	#------------------------------------------------
-
-	def get_lid_df(self, lid, current_df):
-
-		try:
-			current_text = list(current_df.loc[:,"Text"].values)
-			y = lid.predict(current_text)
-			
-			current_df.loc[:,"Lang"] = y
-			
-			return current_df
-			
-		except:
-			return None
-	#------------------------------------------------
+	def lid_cc(self, input_dir, output_dir, region, workers):
 	
-	def lid_cc(self, input_dir, output_dir, lid_model):
-	
-		#Run lidNet on the corpus
-		
-		#Constants
-		from pathlib import Path
-		from lidNet.lidNet.lidNet import lidNet
-		lid = lidNet(lid_model)	
-
 		segment_list = []
-		for root, dirs, files in os.walk(input_dir):
-			segment_list += files
-
-		#Iterate over country files in current time period
-		for file in segment_list:
-			
-			region, country, period = self.get_metadata(file)
-			file = os.path.join(".", region, country, file)
-			print("\tStarting " + str(file), end = "")		
-			
-			if file.endswith(".hdf"):
-				write_name = "temp.hdf"
-			elif file.endswith(".p"):
-				write_name = "temp.p"
-
-			#Download, open, and delete temp file
-			current_df = self.load_df(file)
-			os.remove(file)
-						
-			print(" with " + str(len(current_df)) + " samples")
-			current_df = self.get_lid_df(lid, current_df)
-			
-			try:
-				#Get langs present, preset the S3 path
-				langs = list(set(list(current_df.loc[:,"Lang"].values)))
-								
-				for lang in langs:
-							
-					#Reduce to lang-specific df
-					query_string = "(Lang == '" + lang + "')"
-					lang_df = current_df.query(query_string)
-								
-					#Write to S3
-					if not os.path.isdir(os.path.join(".", output_dir, region, country)):
-						path = Path(os.path.join(".", output_dir, region, country))
-						path.mkdir(parents=True)
-					write_filename = os.path.join(".", output_dir, region, country, region + "." + country + "." + period + "." + lang + ".hdf")
-								
-					#Write to disk
-					lang_df.to_hdf(write_filename, key = "data", mode = "w", format = "fixed", complevel = 9, complib = "zlib")
-					
-			except Exception as e:
-				print("\n\n")
-				print("Skipping " + file)
-				print(e)
-				print("\n\n")
-					
-	#--------------------------------------------------------------------
-	
-	def get_text(self, full_df):
-	
-		full_text = []
-		text = list(full_df.loc[:,"Text"].values)
-		
-		word_counter = 0
-		temp_string = ""
-		
-		for sample in text:
-			for word in sample.split(" "):
-				
-				word_counter += 1
-				temp_string += word + " "
-				
-				if word_counter >= 100:
-					full_text.append(temp_string[:-1])
-					word_counter = 0
-					temp_string = ""
-				
-		return full_text
-	#--------------------------------------------------------------------
-	
-	def write_text(self, full_text, write_dir, write_filename):
-	
-		pathlib.Path(write_dir).mkdir(parents = True, exist_ok = True)
-		
-		random.shuffle(full_text)
-	
-		with codecs.open(os.path.join(write_dir, write_filename), "w", encoding = "utf-8", errors = "replace") as fo:
-			for line in full_text:
-				fo.write(str(line))
-				fo.write("\n")
-				
-	#--------------------------------------------------------------------
-	
-	def zip_dir(self, region):
-	
-		print("\nWriting to zip file.\n")
-		path = os.path.join(".", region)	
-		zipf = zipfile.ZipFile(region + ".zip", "w", zipfile.ZIP_DEFLATED)
-		
-		for root, dirs, files in os.walk(path):
+		for root, dirs, files in os.walk(input_dir, region):
 			for file in files:
-				zipf.write(os.path.join(root, file))
-	
-	#-------------------------------------------------------------------
-	
-	def final_cc(self, path_to_input):
-	
-		from collections import defaultdict
-		
-		#Load crawl files from local drive, merge and dedupe, and save to local drive
-		#This process should be run on a large machine but doesn't take long
-		#Use AWS-CLI to upload files in path_to_output to S3 if desired
-	
-		#---- Iterate over files
-		print("")
-		
-		segment_list = []
-		merge_dict = defaultdict(dict)
-		
-		for root, dirs, files in os.walk(path_to_input):
-			segment_list += files
+				file = os.path.join(root, file)
+				segment_list.append(file)
+			
+		#Multi-process by file
+		pool_instance = mp.Pool(processes = workers, maxtasksperchild = 1)
+		line_list = pool_instance.map(partial(process_lid,
+													input_dir = input_dir,
+													output_dir = output_dir
+													), segment_list, chunksize = 1)
 
-		for file in segment_list:
-			print("Starting " + file)
-			
-			meta = file.split(".")
-			region = meta[0]
-			country = meta[1]
-			period = meta[2]
-			language = meta[3]
-			
-			try:
-				merge_dict[country][language].append(file)
-			except:
-				merge_dict[country][language] = [file]
-			
-		for country in merge_dict:
-			for language in merge_dict[country]:
-				
-				
-				first_flag = True	#Whether to initialize holder file
-				
-				for file in merge_dict[country][language]:
+		pool_instance.close()
+		pool_instance.join()
 					
-					print(file)
-					filename = os.path.join(path_to_input, region, country, file)
-
-					#Open hdf
-					if filename.endswith(".hdf"): 
+	#--------------------------------------------------------------------
+	
+	def final_cc(self, input_dir, output_dir, region):
+	
+		for country in os.listdir(os.path.join(input_dir, region)):
+			for language in os.listdir(os.path.join(input_dir, region, country)):
+				
+				first_flag = True	#First for this set
+				counter = 1
+				
+				for file in os.listdir(os.path.join(input_dir, region, country, language)):
+				
+					file = os.path.join(input_dir, region, country, language, file)
+					new_df = pd.read_csv(file, compression = "gzip")
+					
+					if first_flag == True:
+						first_flag = False
+						current_df = new_df
+						print("\tFirst time for " + region + " " + country + " " + language)
 						
-						print("\t\t" + filename)
+					else:
 						
-						try:
-							current_df = pd.read_hdf(filename)
-								
-							if first_flag == True:
-								full_df = current_df
-								first_flag = False
-									
-							else:
-								full_df = pd.concat([full_df, current_df])
+						#First, merge new_df
+						print("\tContinuing with " + file)
+						current_df = pd.concat([current_df, new_df])
+						current_df.drop_duplicates(subset = "URL", keep = "first", inplace = False)
+						
+						#Second, check length
+						if len(current_df) > 1000000:
+							write_df = current_df.head(n = 1000000)
+							current_df = current_df.tail(n = len(current_df) - 1000000)
 							
-							# #Or, open pickles
-							if filename.endswith(".p"): 
+							write_name = region + "." + country + "." + language + "." + str(counter) + ".gz"
+							write_name = os.path.join(output_dir, region, country, language, write_name)
+							os.makedirs(os.path.join(output_dir, region, country, language), exist_ok = True)
+							counter += 1
 							
-								print("\t\t" + filename)
-								current_df = pd.read_pickle(filename, compression = "gzip")
-								
-								if first_flag == True:
-									full_df = current_df
-									first_flag = False
-									
-								else:
-									full_df = pd.concat([full_df, current_df])
-						
-						except Exception as e:
-							print(e)
-					
-				#Dedupe once all country/language files have been added
-				starting = time.time()
-				try:
-					full_length = len(full_df)
-					full_df.drop_duplicates(subset = "Text", keep = "first", inplace = True)
-
-					print("Total: " + str(len(full_df)) + ", after removing " + str((full_length - len(full_df))) + " in " + str(time.time() - starting))
-					full_text = self.get_text(full_df)
-					del full_df
-					
-					if len(full_text) > 500:
-						write_dir = os.path.join(".", region, country)
-						write_filename = "cc-gdc." + region + "." + country + "." + language + ".txt"
-						self.write_text(full_text, write_dir, write_filename)
+							write_df.to_csv(write_name, header = True, index = False, index_label = False, compression = "gzip")
+							print("\t\tWriting " + write_name)
+							del write_df
+							
+				#Done with all files, write the remaining
+				write_name = region + "." + country + "." + language + "." + str(counter) + ".gz"
+				write_name = os.path.join(output_dir, region, country, language, write_name)
+				os.makedirs(os.path.join(output_dir, region, country, language), exist_ok = True)
+				counter += 1
+							
+				current_df.to_csv(write_name, header = True, index = False, index_label = False, compression = "gzip")
+				print("\t\tWriting " + write_name)
 				
-				except Exception as e:
-					print(e)
-
-		# #Now zip entire directory
-		# self.zip_dir(region)
+				del current_df
+				
+					
+	
+	#--------------------------------------------------------------------

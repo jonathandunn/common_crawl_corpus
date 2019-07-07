@@ -73,6 +73,9 @@ def process_lid(segment, input_dir, output_dir):
 		with open(os.path.join("check", check), "w") as fo:
 			fo.write("Done")
 			
+		os.remove(segment)
+		print("\tDeleted " + segment)
+			
 		return
 #--------------------
 
@@ -635,7 +638,7 @@ class CC_Corpus(object):
 	def lid_cc(self, input_dir, output_dir, region, workers):
 	
 		segment_list = []
-		for root, dirs, files in os.walk(input_dir, region):
+		for root, dirs, files in os.walk(os.path.join(input_dir, region)):
 			for file in files:
 				file = os.path.join(root, file)
 				segment_list.append(file)
@@ -678,9 +681,9 @@ class CC_Corpus(object):
 						current_df.drop_duplicates(subset = "URL", keep = "first", inplace = False)
 						
 						#Second, check length
-						if len(current_df) > 1000000:
-							write_df = current_df.head(n = 1000000)
-							current_df = current_df.tail(n = len(current_df) - 1000000)
+						if len(current_df) > 100000:
+							write_df = current_df.head(n = 100000)
+							current_df = current_df.tail(n = len(current_df) - 100000)
 							
 							write_name = region + "." + country + "." + language + "." + str(counter) + ".gz"
 							write_name = os.path.join(output_dir, region, country, language, write_name)
@@ -702,6 +705,10 @@ class CC_Corpus(object):
 				
 				del current_df
 				
-					
+				#Done, now delete
+				for file in os.listdir(os.path.join(input_dir, region, country, language)):
+				
+					file = os.path.join(input_dir, region, country, language, file)
+					os.remove(file)					
 	
 	#--------------------------------------------------------------------

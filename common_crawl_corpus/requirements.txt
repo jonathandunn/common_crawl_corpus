@@ -1,0 +1,4 @@
+warcio
+re
+tldextract
+gensim

@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List, Tuple
 from alphabet_detector import AlphabetDetector
 from cytoolz import pipe, juxt
 from gensim.parsing import preprocessing
@@ -8,7 +8,7 @@ import requests
 import os
 import warcio
 import re
-import tldextract
+import collections
 import utilities
 import pandas as pd
 
@@ -46,32 +46,23 @@ def read_wet(filename: str) -> None:
         save_df(df, filename=filename.replace("/", ".") + ".processed")
 
 
-def extract_wet_record(wrac_record) -> Optional[list[tuple[str, str, str, int, str]]]:
-    """Process individual WRAC record in WET file, return list of
+def extract_wet_record(wrac_record) -> Optional[List[Tuple[str, str, str, int, str]]]:
+    """Process individual WRAC record in WET file, return list ofi
     url_suffix, current_country, current_region, url, line"""
     if wrac_record.rec_type != "conversion":
         return
-    # emoji remover
-    try:
-        emoji_regex = re.compile(u'['u'\U0001F300-\U0001F64F'u'\U0001F680-\U0001F6FF'u'\u2600-\u26FF\u2700-\u27BF]+',
-                                 re.UNICODE)
-    except re.error:
-        emoji_regex = re.compile(
-            u'('u'\ud83c[\udf00-\udfff]|'u'\ud83d[\udc00-\ude4f\ude80-\udeff]|'u'[\u2600-\u26FF\u2700-\u27BF])+',
-            re.UNICODE)
-    illegal_chars = ["|", "©", "«", "®", "»", "˂", "˃", "˄", "˅", "/", "\\", "{", "}"]
     url: str = wrac_record.rec_headers.get_header("WARC-Target-URI")
     # getting domain abc.example.com -> ExtractResult(subdomain='abc', domain='hostname', suffix='com')
-    url_domain = tldextract.extract(url)
-    url_suffix = url_domain.suffix
+    url_domain, url_suffix = utilities.extract_url(url)
+
     # TODO There are bugs where the tldextract url of trademe.co.nz would have the suffix of 'co.nz'
-    if url_suffix not in utilities.COUNTRY_CODES_NAME.keys():
+    if url_suffix not in utilities.COUNTRY_CODES_NAME.keys() or url_domain in utilities.URL_FILTER:
         return
-    current_country = utilities.COUNTRY_CODES_NAME[url_suffix]
+    current_country = utilities.COUNTRY_CODES_NAME.get(url_suffix)
 
     web_content: str = wrac_record.content_stream().read().decode("utf-8")
     # we need the line larger than 15 character
-    processed_line: list[tuple[str, str, str, int, str]] = []
+    processed_line: List[Tuple[str, str, str, int, str]] = []
     line_num = 0  # flag to make sure it is the same page
     for line in web_content.splitlines():
         if len(line) <= 15:
@@ -83,13 +74,13 @@ def extract_wet_record(wrac_record) -> Optional[list[tuple[str, str, str, int, s
         line = re.sub("<[^>]*>", "", line)
 
         # Remove emojis
-        line = re.sub(emoji_regex, "", line)
+        line = utilities.remove_emoji(line)
 
         # Remove extra spaces
         line = pipe(line,
                     preprocessing.strip_tags, preprocessing.split_alphanum, preprocessing.strip_multiple_whitespaces)
         # Check if still above 15 and not contains any navigational / boilerplate characters
-        if len(line) <= 15 or any(char in line for char in illegal_chars):
+        if len(line) <= 15 or any(char in line for char in utilities.ILLEGAL_CHAR):
             continue
         # Check if mostly numbers / characters
         character_only: str = pipe(line, preprocessing.strip_numeric, preprocessing.strip_punctuation)
@@ -106,9 +97,11 @@ def extract_wet_record(wrac_record) -> Optional[list[tuple[str, str, str, int, s
             length = 50
         if len(line) < length:
             continue
-        if all([line.count("-") < 4, line.count("(") < 4, line.count(")") < 4, line.count("=") < 2, line.count("_") < 2,
-                line.count(".") < 15, line.count("&") < 4, line.count("[") < 3, line.count("]") < 3,
-                line.count("*") < 5]):
+        string_counter = collections.Counter(line)
+        if all([string_counter.get("-", 0) < 4, string_counter.get("(", 0) < 4, string_counter.get(")", 0) < 4,
+                string_counter.get("=", 0) < 2, string_counter.get("_", 0) < 2, string_counter.get(".", 0) < 15,
+                string_counter.get("&", 0) < 4, string_counter.get("[", 0) < 3, string_counter.get("]", 0) < 3,
+                string_counter.get("*", 0) < 5]):
             line_num += 1
             processed_line.append((url_suffix, current_country, url, line_num, line))
     return processed_line
@@ -117,7 +110,7 @@ def extract_wet_record(wrac_record) -> Optional[list[tuple[str, str, str, int, s
 def deduplicate(df: pd.DataFrame):
     # TODO This deduplication only consider exact duplicate, which is not usually applicable in practice,
     #  maybe looking in to Levenshtein distance: TheFuzz, jellyfish or difflib.SequenceMatcher
-    df.columns = ["Domain", "Country", "URL", "LineID", "Text"]
+    df.columns = ("Domain", "Country", "URL", "LineID", "Text")
     original_len = len(df.index)
     df.drop_duplicates(subset="Text", inplace=True)
     print(f"Formatted and Removed {original_len - len(df.index)} with total: {len(df.index)}")

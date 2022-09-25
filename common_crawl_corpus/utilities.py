@@ -1,4 +1,9 @@
 import typing
+import emoji
+import tldextract
+from tldextract.tldextract import ExtractResult
+
+ILLEGAL_CHAR = ("|", "©", "«", "®", "»", "˂", "˃", "˄", "˅", "/", "\\", "{", "}")
 
 COUNTRY_CODES_NAME: typing.Dict[str, str] = {
     "ad": "Andorra", "ae": "United_Arab_Emirates", "af": "Afghanistan", "ag": "Antigua_and_Barbuda", "al": "Albania",
@@ -136,3 +141,85 @@ COUNTRY_CODES_REGION: typing.Dict[str, str] = {
     "台灣": "asia_east", "新加坡": "asia_southeast", "澳門": "asia_east", "香港": "asia_east", "한국": "asia_east",
     "st": "africa_sub"
 }
+# remove the url that repeat the same pages in many countries
+URL_FILTER = (
+    'hotel', 'remax', 'britishcouncil', 'life', 'yellowpages', 'apteka', 'travel', '24', 'nic', 'gouv', 'job',
+    'landrover',
+    'meteo', 'bmw', 'ford', 'toyota', 'manpower', 'renault', 'citroen', 'peugeot', 'airfrance', 'europcar', 'nissan',
+    'inet', 'kayak', 'avis', 'mercedes-benz', 'cosplayfu', 'pinterest', 'bachelorstudies', 'panasonic', 'masterstudies',
+    'silvergoldbull', 'jll', 'ntv', 'habbo', 'academiccourses', 'sephora', 'gay', 'eva', 'tenstickers', 'culture',
+    'monitor', 'thepiratebay', 'booked', 'destinia', 'blogspot', 'choowap', 'edel-optics', 'industrystock', 'piaget',
+    'datasheet', 'chopard', 'tuugo', 'chrono24', 'digikey', 'visahq', 'allrecipes', 'redbull', 'webnode', 'focus',
+    'today',
+    'vessoft', 'huffingtonpost', 'molnlycke', 'radio', 'retsch', 'schaeffler', 'viagogo', 'volvotrucks', 'weather',
+    'websitelibrary', 'jetradar', 'simplyhired', 'lyrics', 'metro', 'drivershere', 'bnb', 'catholic', 'encycolorpedia',
+    'politics', 'projects-abroad', 'bmcsoftware', 'mytaste', 'ticmate', 'vita', 'icecat', 'comsol', 'skyscanner',
+    'freemeteo', 'groupon', 'caritas', 'huno', 'sapo', 'vogue', 'abc', 'funnygames', 'transfermarkt', 'flagma',
+    'gorenje',
+    'indeed', 'lomography', 'tripadvisor', 'ebike-base', 'ibooked', 'olympic', 'freelancer', 'nobleprog', 'hotels',
+    'poki',
+    'spartoo', 'laredoute', 'europages', 'fishbase', 'nvidia', 'wimdu', 'amazon', 'mathworks', 'regus', 'ebay',
+    'directferries', 'schneider-electric', 'talkreviews', 'fairmont', 'agriaffaires', 'solarmovie', 'eurocampings',
+    'lookfantastic', 'expedia', 'google', 'radissonblu', 'intel', 'sandisk', 'gamereactor', 'airbnb', 'hotfrog',
+    'staples',
+    'mts', 'humanrights', 'sports', 'mama', 'hardware', 'catawiki', 'esprit', 'islam', 'audi', 'sport1', 'hh',
+    'fjallraven',
+    'weatheronline', 'wika', 'equinix', 'efinancialcareers', 'doublegames', 'randstad', 'wiggle', 'testfreaks',
+    'babycenter', 'morningstar', 'lorealprofessionnel', 'domyos', 'play', 'brother', 'myprotein', 'instron',
+    'villeroy-boch', 'linux', 'bosch-home', 'hager', 'longines', 'unicef', 'woxikon', 'hilti', 'fxpro', 'hipp', 'omron',
+    'gifmania', 'mitula', 'sixt', 'leroymerlin', 'pepperl-fuchs', 'stihl', 'creativecommons', 'bose', 'meteoprog',
+    'panorama', 'laitman', 'visitdenmark', 'ine', 'elle', 'kb', 'adidas', 'game-game', 'careerjet', 'jobisjob',
+    'tribord',
+    'yves-rocher', 'gettyimages', 'intersport', 'plus500', 'tui', 'holidaycheck', 'ucoz', 'autoeurope', 'denios',
+    'vlex',
+    'keuco', 'shopmania', 'songspk', 'government', 'putlocker', 'yp', 'monotaro', 'homeaway', 'tvtrip', 'nintendo',
+    'minube', 'homify', 'stubhub', 'heidenhain', 'pwc', 'esquire', 'decathlon', 'intertool', 'iha', 'travelnews',
+    'blog',
+    'amnesty', 'momondo', 'wikimedia', 'golf', 'siemens', 'redcross', 'forum', 'orange', 'jooble', 'deliveroo',
+    'volkswagen', 'handball', 'mfa', 'honda', 'gamers', 'cari', 'citywire', 'livescore', 'mp3skull', 'watchseries',
+    'foodpanda', 'eventbrite', 'opendi', 'localmart', 'trivago', 'unesco', 'anunico', '99designs', 'laroche-posay',
+    'genious', 'millesima', 'vichy', 'neuvoo', 'ubuntu', 'century21', 'pokerlistings', 'msf', 'mybb', 'sony', 'alatest',
+    'cosmo', 'rtl', 'epson', 'adoos', 'viva', 'buro247', 'moviesonline', 'president', 'market', 'top', 'time', 'egov',
+    'cosmopolitan', 'fragrantica', 'amcham', 'camping', 'transparency', 'atlascopco', 'money', 'nationalgeographic',
+    'skoda', 'wwf', 'bauhaus', 'lastfm', 'ciao', 'canon', 'yasni', 'nestle', 'agoda', 'harpersbazaar', 'timeout',
+    'institutfrancais', 'vistaprint', 'msccruises', 'trovit', 'fishersci', 'reebok', 'atea', 'music', 'capital', 'pomu',
+    'cartoonnetwork', 'education', 'eurosport', 'grazia', 'army', 'mascus', 'dormeo', 'mir', 'click', 'gazeta', 'sport',
+    'scientology', 'filetypes', 'fruugo', 'seton', 'autodesk', 'softpicks', 'sparta', 'merchandisingplaza', 'femina',
+    'aquatuning', 'tiendeo', 'atv', 'businessinsider', 'top-shop', 'micro-epsilon', 'franchising', 'lexus', 'coface',
+    'marieclaire', 'sputnik', 'posters', 'scandinaviandesigncenter', 'autosport', 'computerworld', 'tribuna', 'radio1',
+    'posta', 'superprof', 'olx', 'expert', 'navabi', 'energia', 'autoline-eu', 'lookingforbooking', 'philips', 'vesti',
+    'danubiushotels', 'realigro', 'woman', 'kia', 'rp5', 'obi', 'games', 'shop-rc-models', '2gis', 'tele2', 'museum',
+    'glamour', 'kp', 'adriatic-home', 'auto', 'rabota', 'imaginarium', 'jetcost', 'kino', 'oferteo', 'softkey',
+    'bimago',
+    'snowtrex', 'nickelodeon', 'interhome', 'topdestination', 'forbes', 'flatfy', 'bonprix', 'esky', 'douglas',
+    'michelin',
+    'telekom', 'zooplus', 'picclick', 'makita', 'thebodyshop', 'open-closed', 'tv3', 'samsonite', 'conrad', 'donkiz',
+    'amway', 'zankyou', 'doctoralia', 'electrolux', 'mediamarkt', 'lgblog', 'blogs', 'opel', 'nordea', 'dnevnik', 'if',
+    'tchibo', 'nivea', 'standard', 'zeiss', 'gismeteo', 'fashion', 'aga', 'wolfcraft', 'bridgestone', 'opera', 'sgs',
+    'shopalike', 'docplayer', 'index', 'klingel', 'mtv', 'zoover', 'machineryzone', 'home', 'dekoria', 'autoscout24',
+    'kelkoo', 'westwing', 'flixbus', 'football', 'coop', 'download', 'webwiki', 'eventim', 'independent', 'justice',
+    'turismoi', 'vuelosbaratos', 'geek', 'chamber', '1-urlm', 'clasf', 'divendo', 'cylex', 'autoline', 'jobtonic',
+    'metin2',
+    'edigital', 'volleyball', 'hbo', 'basket', 'reporter', 'mister-auto', 'shirtcity', 'anywayanyday', 'literatura',
+    'novasol', 'berlitz', 'urlm', 'shell', 'fitshop', 'doplim', 'tirendo', 'emagister', 'slideplayer', 'telegraf',
+    'stat',
+    'spreadshirt', 'zazzle', 'toysrus', 'monster', 'flashscore', 'just-eat', 'allposters', 'forumgratuit', 'uni',
+    'ticketpro', 'ticketmaster', 'pixum', 'michaelpage', 'jobs', 'nuroa', 'autoblog', 'vodafone', 'pinkorblue',
+    'studentjob', 'home24', 'parlament', 'topshop', 'automobile', 'menshealth', 'ekosport', 'faktor', 'gohome',
+    'bravofly',
+    'pcworld', 'afribaba', 'jumia', 'nu3', 'logismarket', 'solostocks', 'sarenza', 'skiinfo', 'eurogamer', 'euronics',
+    'europosters', 'sportsevents365', 'gear4music', 'viamichelin', 'zalando', 'campingcard', 'bax-shop', 'meteovista',
+    'teloos', 'yachtworld', 'notino', 'bikester', 'fitnessdigital', 'euractiv', 'nded', 'transitcenter', 'happyhair',
+    'killerinktattoo', 'openhours', '24mx', 'ecco-verde', 'onlineprinters', 'boels', 'casamundo', 'atraveo', 'mercateo',
+    'thelocal', 'stepstone', 'bechtle', 'bridesire', 'rajapack', 'roefix', 'electronic-star', 'holidayguru',
+    'rapunzelofsweden', 'kilroy', 'gombis', 'skatepro', 'yoursurprise', 'campz', 'peterhahn', 'telia'
+)
+
+
+def remove_emoji(text: str):
+    return emoji.replace_emoji(text, replace='')
+
+
+def extract_url(url: str):
+    url_extract = tldextract.extract(url)
+    return url_extract.domain, url_extract.suffix

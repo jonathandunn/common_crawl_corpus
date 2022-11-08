@@ -2,3 +2,4 @@ warcio
 re
 tldextract
 gensim
+pyarrow

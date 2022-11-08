@@ -4,7 +4,7 @@ import pickle
 import pandas as pd
 import requests
 
-FILE_DOWNLOAD_DIR = "./"
+FILE_DOWNLOAD_DIR = "/Volumes/nathan/Common Crawl/"
 
 
 # FILE_DOWNLOAD_DIR = "/Users/nathan/Downloads"
@@ -16,7 +16,7 @@ def download_index(year_range: str) -> None:
         e.g. CC-MAIN-2014-15
     """
     url = f"https://data.commoncrawl.org/crawl-data/{year_range}/wet.paths.gz"
-    with open(os.path.join(FILE_DOWNLOAD_DIR, f"{year_range}-warc.paths.gz"), "wb") as file:
+    with open(os.path.join(FILE_DOWNLOAD_DIR, f"{year_range}-warc.paths.gz".replace("/", "-")), "wb") as file:
         response = requests.get(url)
         file.write(response.content)
 

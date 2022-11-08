@@ -1,7 +1,7 @@
 import typing
 import emoji
 import tldextract
-from tldextract.tldextract import ExtractResult
+import nltk
 
 ILLEGAL_CHAR = ("|", "©", "«", "®", "»", "˂", "˃", "˄", "˅", "/", "\\", "{", "}")
 
@@ -223,3 +223,7 @@ def remove_emoji(text: str):
 def extract_url(url: str):
     url_extract = tldextract.extract(url)
     return url_extract.domain, url_extract.suffix
+
+
+def extract_n_grams(text: str, n: int = 1):
+    return nltk.ngrams(text, n)

@@ -10,6 +10,7 @@ import collections
 
 alphabet_detector = AlphabetDetector()
 
+
 def read_wet(file_dir: str) -> pd.DataFrame:
     """Save processed WET_record to list then save it to pickle file"""
     # TODO: add multiprocessing for wet not wet record

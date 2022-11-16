@@ -16,8 +16,8 @@ def download_index(year_range: str) -> None:
         e.g. CC-MAIN-2014-15
     """
     url = f"https://data.commoncrawl.org/crawl-data/{year_range}/wet.paths.gz"
+    response = requests.get(url)
     with open(os.path.join(FILE_DOWNLOAD_DIR, f"{year_range}-warc.paths.gz".replace("/", "-")), "wb") as file:
-        response = requests.get(url)
         file.write(response.content)
 
 
@@ -27,8 +27,8 @@ def download_wet(index: str):
         e.g. crawl-data/CC-MAIN-2022-40/segments/1664030331677.90/wet/CC-MAIN-20220924151538-20220924181538-00000.warc.wet.gz
     """
     url = f"https://data.commoncrawl.org/{index}"
+    response = requests.get(url)
     with open(os.path.join(FILE_DOWNLOAD_DIR, index.replace("/", "-")), "wb") as file:
-        response = requests.get(url)
         file.write(response.content)
 
 

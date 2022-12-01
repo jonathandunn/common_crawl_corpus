@@ -4,7 +4,7 @@ import pickle
 import pandas as pd
 import requests
 
-FILE_DOWNLOAD_DIR = "/Volumes/nathan/Common Crawl/"
+FILE_DOWNLOAD_DIR = "/home/james/common_crawl_corpus/cc_data/"
 
 
 # FILE_DOWNLOAD_DIR = "/Users/nathan/Downloads"
@@ -26,11 +26,11 @@ def download_wet(index: str):
         Downloads the second level index file for the given year range.
         e.g. crawl-data/CC-MAIN-2022-40/segments/1664030331677.90/wet/CC-MAIN-20220924151538-20220924181538-00000.warc.wet.gz
     """
-    url = f"https://data.commoncrawl.org/{index}"
+    url = f"https://data.commoncrawl.org/{index}".strip()
     response = requests.get(url)
-    with open(os.path.join(FILE_DOWNLOAD_DIR, index.replace("/", "-")), "wb") as file:
+    with open(os.path.join(FILE_DOWNLOAD_DIR, index.replace("/", "-")).strip(), "wb") as file:
         file.write(response.content)
-
+    file.close()
 
 def ngrams_deduplicate():
     pass

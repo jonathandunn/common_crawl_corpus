@@ -1,8 +1,10 @@
 import os
 import pickle
-
-import pandas as pd
 import requests
+import gzip
+from .WET_processor import *
+from multiprocessing.pool import ThreadPool
+
 import logging
 FILE_DOWNLOAD_DIR = "/home/james/common_crawl_corpus/cc_data/"
 
@@ -18,16 +20,25 @@ logger.debug('call to common_crawl_corpus made')
 def download_index(year_range: str) -> None:
     """
         Downloads the top index file for the given year range.
-        e.g. CC-MAIN-2014-15
+        e.g. CC-MAIN-2022-40
     """
     url = f"https://data.commoncrawl.org/crawl-data/{year_range}/wet.paths.gz"
     logger.info('inside download_index')
-    
+
     filepath = os.path.join(FILE_DOWNLOAD_DIR, f"{year_range}-warc.paths.gz".replace("/", "-")).strip()
     logger.debug('filepath of downloaded file: %s', str(filepath))
     response = requests.get(url)
     with open(filepath, "wb") as file:
         file.write(response.content)
+
+
+def download_wet_from_index(index_filename: str):
+    """
+    Scan downloaded index file and download its segments
+    """
+    with gzip.open(index_filename, "r") as index:
+        lines = [line.decode("utf-8").rstrip() for line in index.readlines()]
+        ThreadPool(8).imap_unordered(download_wet, lines)
 
 
 def download_wet(index: str):
@@ -43,10 +54,6 @@ def download_wet(index: str):
     with open(filepath, "wb") as file:
         file.write(response.content)
     file.close()
-
-def ngrams_deduplicate():
-    pass
-
 
 def save_df(df: pd.DataFrame, filename: str):
     df.infer_objects()

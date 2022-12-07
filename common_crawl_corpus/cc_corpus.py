@@ -103,11 +103,11 @@ class CC_Corpus(object):
         self.formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         self.ch.setFormatter(self.formatter)
         self.logger.addHandler(self.ch)
-        self.logger.info('CC_Corpus class initialized')
+        self.logger.debug('cc_corpus class initialized')
     #----------------------------------------------------------------------------------------------#
     
     def strip_tags(self, line):
-
+        self.logger.debug("stripping tags in strip_tags")
         line = re.sub(r"http\S+", "", line)
         line = re.sub("<[^>]*>", '', line)
         
@@ -115,7 +115,7 @@ class CC_Corpus(object):
     #----------------------------------------------------------------------------------------------#
 
     def process_wet(self, file, read_bucket):
-        self.logger.info('Starting to process wet file')
+        self.logger.debug('starting to process wet file named %s', file)
         #Initialize emoji remover
         try:
             # Wide UCS-4 build
@@ -223,19 +223,19 @@ class CC_Corpus(object):
                         
             del response
             
-            print("Loading " + str(file) + ": " + str(time.time() - starting))
-            self.logger.info('Ending processing of wet file')
+            self.logger.info('ending processing of wet file: %s', str(file))
+            self.logger.debug('loading ' + str(file) + ': ' + str(time.time() - starting))
             return line_list
             
         except Exception as e:
             self.logger.error(e)
-            self.logger.error('Processing of wet aborted due to error')
+            self.logger.error('processing of wet file aborted due to error: %s', str(file))
             
             return []
     #------------------------------------------------------------------------------------------------#
 
     def crawl_cc(self, prefix_list, write_bucket, workers = 1):
-    
+        self.logger.info('beginning crawl_cc function') 
         #AWS Presets -----------------------------------#
         client = boto3.client("s3")
         read_bucket = "commoncrawl"

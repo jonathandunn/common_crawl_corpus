@@ -94,3 +94,11 @@ def deduplicate(df: pd.DataFrame):
     original_len = len(df.index)
     df.drop_duplicates(subset="Text", inplace=True, ignore_index=True)
     print(f"Formatted and Removed {original_len - len(df.index)} with remaining: {len(df.index)}")
+
+def drop_mnc_url(df: pd.DataFrame):
+    #This function drops the URL based on the list of known international companies provided earlier. Specify
+    #your own or build better tools.
+    df.columns = ("Domain", "Country", "URL", "LineID", "Text")
+    original_len = len(df.index)
+    #for each url, where domain is a member of set of URLs
+    print(f"Removed {original_len - len(df.index)} with remaining: {len(df.index)}")

@@ -7,13 +7,29 @@ from . import utilities
 from typing import Optional, List, Tuple
 from alphabet_detector import AlphabetDetector
 import collections
+import logging
 
 alphabet_detector = AlphabetDetector()
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+ch.setFormatter(formatter)
+logger.addHandler(ch)
+logger.debug('call to WET_processer')
+
+
+
+
 
 
 def read_wet(file_dir: str) -> pd.DataFrame:
     """Save processed WET_record to list then save it to pickle file"""
     # TODO: add multiprocessing for wet not wet record
+    logger.debug('Inside read_wet, directory is set as %s', str(file_dir))
+    logger.info('Reading wet file')
     with open(file_dir, "rb") as file:
         lines = []
         for record in warcio.ArchiveIterator(file):
@@ -32,6 +48,7 @@ def extract_wet_record(wrac_record) -> Optional[List[Tuple[str, str, str, int, s
     if wrac_record.rec_type != "conversion":
         return
     url: str = wrac_record.rec_headers.get_header("WARC-Target-URI")
+    logger.debug('inside extract_wet_record: url of record is %s', str(url))
     # getting domain abc.example.com -> ExtractResult(subdomain='abc', domain='hostname', suffix='com')
     url_domain, url_suffix = utilities.extract_url(url)
 
@@ -93,13 +110,24 @@ def deduplicate(df: pd.DataFrame):
     df.columns = ("Domain", "Country", "URL", "LineID", "Text")
     original_len = len(df.index)
     df.drop_duplicates(subset="Text", inplace=True, ignore_index=True)
-    print(f"Formatted and Removed {original_len - len(df.index)} with remaining: {len(df.index)}")
+    logger.info('inside deduplicate')
+    logger.debug(f"Formatted and Removed {original_len - len(df.index)} with remaining: {len(df.index)}")
 
 def drop_mnc_url(df: pd.DataFrame):
     #This function drops the URL based on the list of known international companies provided earlier. Specify
     #your own or build better tools.
+    logger.info('inside drop_mnc_url: dropping urls of mncs')
     df.columns = ("Domain", "Country", "URL", "LineID", "Text")
     original_len = len(df.index)
     #for each url, where domain is a member of set of URLs
     print(f"Removed {original_len - len(df.index)} with remaining: {len(df.index)}")
     raise NotImplementedError
+
+class Deduplicator():
+    """This class exists over the lifecycle of a processing run in order to 
+    hold statistics, hashstate for record elimintion between shards and prevent 
+    costly rereading of url lists into the system. It has three main methods, 
+    deduplicate_exact, deduplicate_cluster, deduplicate_international 
+    deduplicate exact removes the exact matching records,
+    deduplicate clusters removes the clusters LSA matching records,
+    dedupliate international removes multinational websites from the records"""

@@ -107,6 +107,7 @@ class CC_Corpus(object):
     #----------------------------------------------------------------------------------------------#
     
     def strip_tags(self, line):
+        self.logger.info('inside strip_tags')
         self.logger.debug("stripping tags in strip_tags")
         line = re.sub(r"http\S+", "", line)
         line = re.sub("<[^>]*>", '', line)
@@ -115,6 +116,7 @@ class CC_Corpus(object):
     #----------------------------------------------------------------------------------------------#
 
     def process_wet(self, file, read_bucket):
+        self.logger.info('inside process_wet')
         self.logger.debug('starting to process wet file named %s', file)
         #Initialize emoji remover
         try:
@@ -235,7 +237,7 @@ class CC_Corpus(object):
     #------------------------------------------------------------------------------------------------#
 
     def crawl_cc(self, prefix_list, write_bucket, workers = 1):
-        self.logger.info('beginning crawl_cc function') 
+        self.logger.info('inside crawl_cc')
         #AWS Presets -----------------------------------#
         client = boto3.client("s3")
         read_bucket = "commoncrawl"
@@ -310,12 +312,11 @@ class CC_Corpus(object):
                     file_list = []
 
                     if True:
-
+                        self.logger.debug('entering multiprocessing stage in crawl_cc')
                         for item in response["Contents"]:
                             file_list.append(item["Key"])
                         
-                        print(" with " + str(len(file_list)) + " files")
-                    
+                        self.logger.debug('in crawl_cc with ' + str(len(file_list)) + ' files') 
                         #Loop over WET files in this segment
                         #Multi-process this part
                         
@@ -330,8 +331,7 @@ class CC_Corpus(object):
 
                             pool_instance.close()
                             pool_instance.join()
-                            
-                            print("Done " + str(len(line_list)))
+                            self.logger.debug('completed ' + str(len(line_list))) 
 
                             #Done getting lines, now dedupe
                             line_list = [item for item in line_list if item is not None]
@@ -373,6 +373,8 @@ class CC_Corpus(object):
     
         #---- Iterate over files
         #AWS Presets -----------------------------------#
+        self.logger.info('entering format_cc')
+        self.logger.debug('entering into format_cc with input path: %s and output path: %s', str(path_to_input), str(path_to_output))
         client = boto3.client("s3")
         read_bucket = path_to_input
 
@@ -515,7 +517,7 @@ class CC_Corpus(object):
                         if len(current_df) < 1000:
                             break   
             
-        print("Ending!")
+        self.logger.info('exiting format_cc')
         del current_df
         del full_df
         

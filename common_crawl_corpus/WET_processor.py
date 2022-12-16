@@ -21,14 +21,10 @@ logger.addHandler(ch)
 logger.debug('call to WET_processer')
 
 
-
-
-
-
 def read_wet(file_dir: str) -> pd.DataFrame:
     """Save processed WET_record to list then save it to pickle file"""
     # TODO: add multiprocessing for wet not wet record
-    logger.debug('Inside read_wet, directory is set as %s', str(file_dir))
+    logger.debug('Inside read_wet, directory is set as %s', file_dir)
     logger.info('Reading wet file')
     with open(file_dir, "rb") as file:
         lines = []
@@ -114,17 +110,19 @@ def deduplicate(df: pd.DataFrame):
     logger.info('inside deduplicate')
     logger.debug(f"Formatted and Removed {original_len - len(df.index)} with remaining: {len(df.index)}")
 
+
 def drop_mnc_url(df: pd.DataFrame):
-    #This function drops the URL based on the list of known international companies provided earlier. Specify
-    #your own or build better tools.
+    # This function drops the URL based on the list of known international companies provided earlier. Specify
+    # your own or build better tools.
     logger.info('inside drop_mnc_url: dropping urls of mncs')
     df.columns = ("Domain", "Country", "URL", "LineID", "Text")
     original_len = len(df.index)
-    #for each url, where domain is a member of set of URLs
+    # for each url, where domain is a member of set of URLs
     print(f"Removed {original_len - len(df.index)} with remaining: {len(df.index)}")
     raise NotImplementedError
 
-class Deduplicator():
+
+class Deduplicator:
     """This class exists over the lifecycle of a processing run in order to 
     hold statistics, hashstate for record elimintion between shards and prevent 
     costly rereading of url lists into the system. It has three main methods, 

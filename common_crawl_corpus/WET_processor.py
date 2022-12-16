@@ -42,7 +42,7 @@ def read_wet(file_dir: str) -> pd.DataFrame:
         # save_df(df, filename=filename.replace("/", ".") + ".processed")
 
 
-def extract_wet_record(wrac_record) -> Optional[List[Tuple[str, str, str, int, str]]]:
+def extract_wet_record(wrac_record) -> Optional[List[Tuple[str, str, str, int, str, int]]]:
     """Process individual WRAC record in WET file, return list ofi
     url_suffix, current_country, current_region, url, line"""
     if wrac_record.rec_type != "conversion":
@@ -59,7 +59,7 @@ def extract_wet_record(wrac_record) -> Optional[List[Tuple[str, str, str, int, s
 
     web_content: str = wrac_record.content_stream().read().decode("utf-8")
     # we need the line larger than 15 character
-    processed_line: List[Tuple[str, str, str, int, str]] = []
+    processed_line: List[Tuple[str, str, str, int, str, int]] = []
     line_num = 0  # flag to make sure it is the same page
     for line in web_content.splitlines():
         if len(line) <= 15:
@@ -94,22 +94,23 @@ def extract_wet_record(wrac_record) -> Optional[List[Tuple[str, str, str, int, s
             length = 50
         if len(line) < length:
             continue
+        text_hash = hash(line)
         string_counter = collections.Counter(line)
         if all([string_counter.get("-", 0) < 4, string_counter.get("(", 0) < 4, string_counter.get(")", 0) < 4,
                 string_counter.get("=", 0) < 2, string_counter.get("_", 0) < 2, string_counter.get(".", 0) < 15,
                 string_counter.get("&", 0) < 4, string_counter.get("[", 0) < 3, string_counter.get("]", 0) < 3,
                 string_counter.get("*", 0) < 5]):
             line_num += 1
-            processed_line.append((url_suffix, current_country, url, line_num, line))
+            processed_line.append((url_suffix, current_country, url, line_num, line, text_hash))
     return processed_line
 
 
 def deduplicate(df: pd.DataFrame):
     # TODO This deduplication only consider exact duplicate, which is not usually applicable in practice,
     #  maybe looking in to Levenshtein distance: TheFuzz, jellyfish or difflib.SequenceMatcher
-    df.columns = ("Domain", "Country", "URL", "LineID", "Text")
+    df.columns = ("Domain", "Country", "URL", "LineID", "Text", "Hash")
     original_len = len(df.index)
-    df.drop_duplicates(subset="Text", inplace=True, ignore_index=True)
+    df.drop_duplicates(subset="Hash", inplace=True, ignore_index=True)
     logger.info('inside deduplicate')
     logger.debug(f"Formatted and Removed {original_len - len(df.index)} with remaining: {len(df.index)}")
 

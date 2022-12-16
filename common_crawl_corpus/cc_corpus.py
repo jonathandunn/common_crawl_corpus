@@ -114,16 +114,19 @@ class CC_Corpus(object):
     #----------------------------------------------------------------------------------------------#
 
     def process_wet(self, file):
-        raise NotImplementedError
+        """This method processes a single wet file and returns a dataframe containing the common fields"""
+	raise NotImplementedError
     #------------------------------------------------------------------------------------------------#
 
     def crawl_cc(self, prefix_list):
+	"""This method downloads the complete CC for a given prefix, from the path file to the WARC files."""
         raise NotImplementedError
                                                         
 #----------------------------------------------------------------------------------------------------------------------#
 
     def format_cc(self, nickname, path_to_input, path_to_output):
-        raise NotImplementedError 
+        """This method conducts deduplication on a directory of crawl files, nicknanme is the CC instance you want to Dedupe"""
+	raise NotImplementedError 
     #------------------------------------------------------------------------------------------------------------#
     
     def lid_cc(self, input_dir, output_dir, region, workers):

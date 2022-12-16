@@ -221,8 +221,8 @@ def remove_emoji(text: str):
 
 
 def extract_url(url: str):
-    url_extract = tldextract.extract(url)
-    return url_extract.domain, url_extract.suffix
+    _, domain, suffix = tldextract.extract(url)
+    return domain, suffix.split('.')[-1]
 
 
 def extract_n_grams(text: str, n: int = 1):

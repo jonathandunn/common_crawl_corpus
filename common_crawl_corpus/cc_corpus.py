@@ -108,12 +108,13 @@ class CC_Corpus(object):
 
     # ----------------------------------------------------------------------------------------------#
 
-    def strip_tags(self, line):
+    def _strip_tags(self, line: str) -> str:
         self.logger.info('inside strip_tags')
         self.logger.debug("stripping tags in strip_tags")
         line = re.sub(r"http\S+", "", line)
-        line = re.sub("<[^>]*>", '', line)
-
+        line = re.sub(r"@\S+", "", line)
+        line = re.sub(r"#\S+", "", line)
+        line = re.sub("<[^>]*>", "", line)
         return line
 
     # ----------------------------------------------------------------------------------------------#

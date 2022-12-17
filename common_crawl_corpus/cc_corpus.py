@@ -229,9 +229,6 @@ class CC_Corpus(object):
         self.logger.debug('cc_corpus class initialized')
 
     # ----------------------------------------------------------------------------------------------#
-
-    # ----------------------------------------------------------------------------------------------#
-
     def _process_wet_record(self, wet_record) -> Optional[List[Tuple[str, str, str, int, str, int]]]:
         """Read individual wet record, split the content to different paragraph, apply filter to remove unwanted
         character and short/trivial lines """
@@ -306,7 +303,7 @@ class CC_Corpus(object):
             name, _ = os.path.splitext(filename)
 
             df = pd.DataFrame(lines, columns=("Domain", "Country", "URL", "LineID", "Text", "Hash"))
-            # df.reset_index()
+            df.reset_index()
             df.to_feather(os.path.join(path, f'dataframe-{name}.feather'))
 
     # ------------------------------------------------------------------------------------------------#
@@ -356,7 +353,7 @@ class CC_Corpus(object):
 
         # ------------------------------------------------------------------------------------------------------------#
 
-    def automatically_process_crawl(self, prefix_list, chunk_size=100):
+    def automatically_process_crawl(self, prefix_list, chunk_size=3):
         """Automatically download, process, and deduplicate on 1 prefix
         e.g. CC-MAIN-2022-40
         """
@@ -365,8 +362,9 @@ class CC_Corpus(object):
             lines = [line.decode("utf-8").rstrip() for line in index_file.readlines()]
         chunks = utilities.divide_list(lines, chunk_size)
         # process each shard
-        for line in chunks:
-            download = ThreadPool(8).map_async(self.download_wet_segment, line)
+        for chunk in chunks:
+            print(len(chunk), chunk)
+            download = ThreadPool(8).map_async(self.download_wet_segment, chunk)
             download.wait()
             # self.download_wet_segment(line)
 

@@ -1,12 +1,12 @@
 import os
-import pickle
 import requests
 import gzip
-from .WET_processor import *
+import pandas as pd
 from multiprocessing.pool import ThreadPool
 
 import logging
-FILE_DOWNLOAD_DIR = "/home/james/common_crawl_corpus/cc_data/"
+
+FILE_DOWNLOAD_DIR = "./common_crawl_download"
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -17,6 +17,7 @@ ch.setFormatter(formatter)
 logger.addHandler(ch)
 logger.debug('call to common_crawl_corpus made')
 
+
 def download_index(year_range: str) -> None:
     """
         Downloads the top index file for the given year range.
@@ -25,7 +26,8 @@ def download_index(year_range: str) -> None:
     url = f"https://data.commoncrawl.org/crawl-data/{year_range}/wet.paths.gz"
     logger.info('inside download_index')
 
-    filepath = os.path.join(FILE_DOWNLOAD_DIR, f"{year_range}-warc.paths.gz".replace("/", "-")).strip()
+    os.makedirs(os.path.abspath(FILE_DOWNLOAD_DIR), exist_ok=True)
+    filepath = os.path.abspath(os.path.join(FILE_DOWNLOAD_DIR, f"{year_range}-wet.paths.gz".strip()))
     logger.debug('filepath of downloaded file: %s', str(filepath))
     response = requests.get(url)
     with open(filepath, "wb") as file:
@@ -48,17 +50,19 @@ def download_wet(index: str):
     """
     url = f"https://data.commoncrawl.org/{index}".strip()
     logger.info('inside download_wet')
-    filepath = os.path.join(FILE_DOWNLOAD_DIR, index.replace("/", "-")).strip()
+
+    os.makedirs(os.path.abspath(FILE_DOWNLOAD_DIR), exist_ok=True)
+    filepath = os.path.abspath(os.path.join(FILE_DOWNLOAD_DIR, index.replace("/", "-")).strip())
     logger.debug('filepath of download file: %s', str(filepath))
     response = requests.get(url)
     with open(filepath, "wb") as file:
         file.write(response.content)
-    file.close()
+
 
 def save_df(df: pd.DataFrame, filename: str):
     df.infer_objects()
-    # HIGHEST_PROTOCOL for python3.8+, DEFAULT_PROTOCOL for 3.4+
-    df.to_pickle(filename, compression="gzip", protocol=pickle.HIGHEST_PROTOCOL)
+    # Save to feather, existing df used picked with gzip
+    df.to_feather(filename)
     print(f"Saved {filename}")
 
 

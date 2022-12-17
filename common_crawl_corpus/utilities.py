@@ -2,6 +2,8 @@ import typing
 import emoji
 import tldextract
 import nltk
+import re
+import pandas as pd
 
 ILLEGAL_CHAR = ("|", "©", "«", "®", "»", "˂", "˃", "˄", "˅", "/", "\\", "{", "}")
 
@@ -227,3 +229,22 @@ def extract_url(url: str):
 
 def extract_n_grams(text: str, n: int = 1):
     return nltk.ngrams(text, n)
+
+
+def get_url_filters_from_file(file_dir):
+    df = pd.read_csv(file_dir, sep=' ', header=None)
+    return df[0].to_list()
+
+
+def divide_list(input_list, chunk_size):
+    length = len(input_list)
+    # Use the zip function to split the input list into the desired number of sublists
+    return [input_list[i:i + chunk_size] for i in range(0, length, chunk_size)]
+
+
+def strip_tags(self, line: str) -> str:
+    line = re.sub(r"http\S+", "", line)
+    line = re.sub(r"@\S+", "", line)
+    line = re.sub(r"#\S+", "", line)
+    line = re.sub("<[^>]*>", "", line)
+    return line

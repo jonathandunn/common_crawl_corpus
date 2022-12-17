@@ -1,29 +1,138 @@
 import collections
+import glob
 import gzip
-from typing import List, Optional
-
-import requests
-import tldextract
-import codecs
-import time
-import re
-import cytoolz as ct
-import pandas as pd
-import numpy as np
-import os
-import pathlib
-import zipfile
-import random
-import multiprocessing as mp
-from functools import partial
-
-import warcio
-from cytoolz import pipe, juxt
-from warcio.archiveiterator import ArchiveIterator
-from alphabet_detector import AlphabetDetector
-from gensim.parsing import preprocessing
-from . import utilities
 import logging
+import multiprocessing as mp
+import os
+from functools import partial
+from multiprocessing.pool import ThreadPool
+from typing import List, Optional, Tuple
+
+import pandas as pd
+import requests
+from alphabet_detector import AlphabetDetector
+from cytoolz import pipe, juxt
+from gensim.parsing import preprocessing
+from warcio.archiveiterator import ArchiveIterator
+
+from . import utilities
+
+# This dictionary maps country codes to (English) country names
+COUNTRY_CODE_NAME = {
+    "ad": "Andorra", "ae": "United_Arab_Emirates", "af": "Afghanistan", "ag": "Antigua_and_Barbuda", "al": "Albania",
+    "am": "Armenia", "ao": "Angola", "aq": "Antarctica", "ar": "Argentina", "as": "American_Samoa", "at": "Austria",
+    "au": "Australia", "aw": "Aruba", "ax": "Åland", "az": "Azerbaijan", "ba": "Bosnia and Herzegovina",
+    "bb": "Barbados", "bd": "Bangladesh", "be": "Belgium", "bf": "Burkina_Faso", "bg": "Bulgaria", "bh": "Bahrain",
+    "bi": "Burundi", "bj": "Benin", "bl": "Saint_Barthélemy", "bm": "Bermuda", "bn": "Brunei ", "bo": "Bolivia",
+    "bq": "Caribbean_Netherlands", "br": "Brazil", "bs": "Bahamas", "bt": "Bhutan", "bw": "Botswana", "by": "Belarus",
+    "bz": "Belize", "ca": "Canada", "cc": "Cocos", "cd": "Democratic_Republic_Congo", "cf": "Central_African_Republic",
+    "cg": "Republic_of_Congo", "ch": "Switzerland", "ci": "Côte_d'Ivoire", "ck": "Cook_Islands", "cl": "Chile",
+    "cm": "Cameroon", "cn": "China", "co": "Colombia", "cr": "Costa_Rica", "cu": "Cuba", "cv": "Cabo_Verde",
+    "cw": "Curaçao", "cx": "Christmas_Island", "cy": "Cyprus", "cz": "Czechia", "de": "Germany", "dj": "Djibouti",
+    "dk": "Denmark", "dm": "Dominica", "do": "Dominican_Republic", "dz": "Algeria", "ec": "Ecuador", "ee": "Estonia",
+    "eg": "Egypt", "er": "Eritrea", "es": "Spain", "et": "Ethiopia", "fi": "Finland", "fj": "Fiji",
+    "fk": "Falkland_Islands", "fm": "Federated_States_Micronesia", "fo": "Faroe_Islands", "fr": "France", "ga": "Gabon",
+    "gb": "United_Kingdom ", "gd": "Grenada", "ge": "Georgia", "gf": "French_Guiana", "gg": "Guernsey", "gh": "Ghana",
+    "gi": "Gibraltar", "gl": "Greenland", "gm": "Gambia", "gn": "Guinea", "gp": "Guadeloupe", "gq": "Equatorial_Guinea",
+    "gr": "Greece", "gs": "South_Georgia", "gt": "Guatemala", "gu": "Guam", "gw": "Guinea-Bissau", "gy": "Guyana",
+    "hk": "Hong_Kong", "hm": "Heard_Island", "hn": "Honduras", "hr": "Croatia", "ht": "Haiti", "hu": "Hungary",
+    "id": "Indonesia", "ie": "Ireland", "il": "Israel", "im": "Isle_of_Man", "in": "India", "iq": "Iraq", "ir": "Iran",
+    "is": "Iceland", "it": "Italy", "je": "Jersey", "jm": "Jamaica", "jo": "Jordan", "jp": "Japan", "ke": "Kenya",
+    "kg": "Kyrgyzstan", "kh": "Cambodia", "ki": "Kiribati", "km": "Comoros", "kn": "Saint_Kitts_Nevis",
+    "kp": "North_Korea", "kr": "South_Korea", "kw": "Kuwait", "ky": "Cayman_Islands", "kz": "Kazakhstan", "la": "Lao",
+    "lb": "Lebanon", "lc": "Saint_Lucia", "li": "Liechtenstein", "lk": "Sri_Lanka", "lr": "Liberia", "ls": "Lesotho",
+    "lt": "Lithuania", "lu": "Luxembourg", "lv": "Latvia", "ly": "Libya", "ma": "Morocco", "mc": "Monaco",
+    "md": "Moldova", "me": "Montenegro", "mf": "Saint-Martin", "mg": "Madagascar", "mh": "Marshall_Islands ",
+    "mk": "North_Macedonia", "ml": "Mali", "mm": "Myanmar", "mn": "Mongolia", "mo": "Macao",
+    "mp": "Northern_Mariana_Islands", "mq": "Martinique", "mr": "Mauritania", "ms": "Montserrat", "mt": "Malta",
+    "mu": "Mauritius", "mv": "Maldives", "mw": "Malawi", "mx": "Mexico", "my": "Malaysia", "mz": "Mozambique",
+    "na": "Namibia", "nc": "New_Caledonia", "ne": "Niger", "nf": "Norfolk_Island", "ng": "Nigeria", "ni": "Nicaragua",
+    "nl": "Netherlands", "no": "Norway", "np": "Nepal", "nr": "Nauru", "nu": "Niue", "nz": "New_Zealand", "om": "Oman",
+    "pa": "Panama", "pe": "Peru", "pf": "French_Polynesia", "pg": "Papua_New_Guinea", "ph": "Philippines",
+    "pk": "Pakistan", "pl": "Poland", "pm": "Saint_Pierre", "pn": "Pitcairn", "pr": "Puerto Rico", "ps": "Palestine",
+    "pt": "Portugal", "pw": "Palau", "py": "Paraguay", "qa": "Qatar", "re": "Réunion", "ro": "Romania", "rs": "Serbia",
+    "ru": "Russia", "rw": "Rwanda", "sa": "Saudi_Arabia", "sb": "Solomon_Islands", "sc": "Seychelles", "sd": "Sudan",
+    "se": "Sweden", "sg": "Singapore", "sh": "Saint_Helena", "si": "Slovenia", "sk": "Slovakia", "sl": "Sierra_Leone",
+    "sm": "San_Marino", "sn": "Senegal", "so": "Somalia", "sr": "Suriname", "ss": "South_Sudan", "st": "Sao_Tome",
+    "sv": "El_Salvador", "sx": "Sint_Maarten", "sy": "Syria", "sz": "Eswatini", "tc": "Caicos_Islands", "td": "Chad",
+    "tf": "French_Southern", "tg": "Togo", "th": "Thailand", "tj": "Tajikistan", "tk": "Tokelau", "tl": "Timor-Leste",
+    "tm": "Turkmenistan", "tn": "Tunisia", "to": "Tonga", "tp": "East_Timor", "tr": "Turkey", "tt": "Trinidad_Tobago",
+    "tv": "Tuvalu", "tw": "China", "tz": "Tanzania", "ua": "Ukraine", "ug": "Uganda", "uk": "United_Kingdom",
+    "us": "United_States", "uy": "Uruguay", "uz": "Uzbekistan", "va": "The_Vatican", "vc": "Saint_Vincent",
+    "ve": "Venezuela", "vg": "Virgin_Islands", "vi": "Virgin_Islands", "vn": "Viet_Nam", "vu": "Vanuatu",
+    "wf": "Wallis_Futuna", "ws": "Samoa", "ye": "Yemen", "yt": "Mayotte", "za": "South_Africa", "zm": "Zambia",
+    "zw": "Zimbabwe", "ελ": "Greece", "бг": "Bulgaria", "бел": "Bulgaria", "мкд": "North_Macedonia", "рф": "Russia",
+    "срб": "Serbia", "укр": "Ukraine", "қаз": "Kazakhstan", "հայ": "Armenia", "الاردن": "Jordan", "الجزائر": "Algeria",
+    "السعودية": "Saudi_Arabia", "المغرب": "Morocco", "امارات": "United_Arab_Emirates", "ایران": "Iran",
+    "بھارت": "India", "تونس": "Tunisia", "سودان": "Sudan", "سورية": "Syria", "عراق": "Iraq", "عمان": "Oman",
+    "فلسطين": "Palestine", "قطر": "Qatar", "مصر": "Egypt", "مليسيا": "Malaysia", "موريتانيا": "Mauritania",
+    "پاكستان": "Pakistan", "پاکستان": "Pakistan", "ڀارت": "India", "भारत": "India", "বাংলা": "Bangladesh",
+    "ভারত": "India", "ਭਾਰਤ": "India", "ભારત": "India", "இந்தியா": "India", "இலங்கை": "Sri_Lanka",
+    "சிங்கப்பூர்": "Singapore", "భారత్": "India", "ಭಾರತ": "India", "ഭാരതം": "India", "ලංකා": "Thailand",
+    "ไทย": "Thailand", "中国": "China", "中國": "China", "台湾": "Taiwan", "台灣": "Taiwan", "新加坡": "Singapore",
+    "澳門": "Macao", "香港": "Hong_Kong", "한국": "South_Korea"
+}
+# This dictionary maps country names to large regions for organizational purposes
+COUNTRY_CODE_REGION = {
+    "ad": "europe_west", "ae": "middle_east", "af": "asia_central", "al": "europe_west", "ao": "africa_sub",
+    "aq": "antarctica", "ar": "america_south", "as": "asia_southeast", "at": "europe_west", "au": "oceania",
+    "aw": "america_central", "ax": "europe_west", "az": "asia_central", "ba": "europe_east", "bb": "america_central",
+    "bd": "asia_south", "be": "europe_west", "bf": "africa_sub", "bg": "europe_east", "bh": "middle_east",
+    "bi": "africa_sub", "bj": "africa_sub", "bl": "american_central", "bm": "america_central", "bn": "asia_southeast",
+    "bo": "america_south", "bq": "america_central", "br": "america_brazil", "bs": "america_central", "bt": "asia_south",
+    "bv": "europe_west", "bw": "africa_southern", "by": "europe_east", "bz": "america_central", "ca": "america_north",
+    "cd": "africa_sub", "cf": "africa_sub", "cg": "africa_sub", "ch": "europe_west", "ci": "africa_sub",
+    "ck": "asia_southeast", "cl": "america_south", "cm": "africa_sub", "cn": "asia_east", "co": "america_south",
+    "cr": "america_central", "cu": "america_central", "cv": "africa_sub", "cw": "america_central",
+    "cx": "asia_southeast", "cy": "europe_west", "cz": "europe_east", "de": "europe_west", "dj": "africa_north",
+    "dk": "europe_west", "dm": "america_central", "do": "america_central", "dz": "africa_north", "ec": "america_south",
+    "ee": "europe_east", "eg": "middle_east", "er": "africa_north", "es": "europe_west", "et": "africa_north",
+    "fi": "europe_west", "fj": "asia_southeast", "fk": "america_south", "fm": "asia_southeast", "fo": "europe_west",
+    "fr": "europe_west", "ga": "africa_sub", "gb": "europe_west", "gd": "america_central", "ge": "asia_central",
+    "gf": "america_south", "gh": "africa_sub", "gi": "africa_north", "gl": "europe_west", "gm": "africa_sub",
+    "gn": "africa_sub", "gp": "america_central", "gr": "europe_west", "gt": "america_central", "gu": "oceania",
+    "gw": "africa_sub", "gy": "america_south", "hk": "asia_east", "hn": "america_central", "hr": "europe_east",
+    "ht": "america_central", "hu": "europe_east", "id": "asia_southeast", "ie": "europe_west", "il": "middle_east",
+    "im": "europe_west", "in": "asia_south", "iq": "middle_east", "ir": "asia_central", "is": "europe_west",
+    "it": "europe_west", "je": "europe_west", "jm": "america_central", "jo": "middle_east", "jp": "asia_east",
+    "ke": "africa_sub", "kg": "asia_central", "kh": "asia_southeast", "ki": "asia_southeast", "km": "africa_sub",
+    "kn": "america_central", "kp": "asia_east", "kr": "asia_east", "kw": "middle_east", "ky": "america_central",
+    "kz": "asia_central", "lb": "middle_east", "lc": "america_central", "li": "europe_west", "lk": "asia_south",
+    "lr": "africa_sub", "ls": "africa_southern", "lt": "europe_east", "lu": "europe_west", "lv": "europe_east",
+    "ma": "africa_north", "mc": "europe_west", "md": "europe_east", "mf": "america_central", "mg": "africa_sub",
+    "mh": "oceania", "mk": "europe_east", "ml": "africa_sub", "mm": "asia_southeast", "mn": "asia_east",
+    "mo": "asia_east", "mp": "oceania", "mq": "america_central", "mr": "africa_sub", "mt": "europe_west",
+    "mu": "asia_southeast", "mv": "europe_west", "mw": "africa_sub", "mx": "america_central", "my": "asia_southeast",
+    "mz": "africa_sub", "na": "africa_southern", "nc": "oceania", "ne": "africa_sub", "nf": "oceania",
+    "ng": "africa_sub", "ni": "america_central", "nl": "europe_west", "no": "europe_west", "np": "asia_south",
+    "nr": "asia_southeast", "nz": "oceania", "om": "middle_east", "pa": "america_central", "pe": "america_south",
+    "pf": "asia_southeast", "pg": "asia_southeast", "ph": "asia_southeast", "pk": "asia_south", "pl": "europe_east",
+    "pm": "america_north", "pr": "america_central", "ps": "middle_east", "pt": "europe_west", "pw": "asia_southeast",
+    "py": "america_south", "qa": "middle_east", "re": "africa_sub", "ro": "europe_east", "rs": "europe_east",
+    "ru": "europe_russia", "rw": "africa_sub", "sa": "middle_east", "sb": "asia_southeast", "sc": "asia_south",
+    "sd": "africa_north", "se": "europe_west", "sg": "asia_southeast", "si": "europe_east", "sk": "europe_east",
+    "sl": "africa_sub", "sm": "asia_southeast", "sn": "africa_sub", "so": "africa_north", "sr": "america_south",
+    "ss": "africa_sub", "su": "europe_russia", "sv": "america_central", "sx": "america_central", "sy": "middle_east",
+    "sz": "africa_southern", "tc": "america_central", "td": "africa_sub", "tg": "africa_sub", "th": "asia_southeast",
+    "tj": "asia_central", "tl": "asia_southeast", "tm": "asia_central", "tn": "africa_north", "tp": "asia_southeast",
+    "tr": "middle_east", "tt": "america_central", "tw": "asia_east", "tz": "africa_sub", "ua": "europe_east",
+    "ug": "africa_sub", "uk": "europe_west", "us": "america_north", "uy": "america_south", "uz": "asia_central",
+    "va": "europe_west", "vc": "america_central", "ve": "america_south", "vg": "america_central",
+    "vi": "america_central", "vn": "asia_southeast", "vu": "asia_southeast", "wf": "asia_southeast",
+    "ye": "middle_east", "yt": "africa_sub", "za": "africa_southern", "zm": "africa_sub", "zw": "africa_southern",
+    "ελ": "europe_west", "бг": "europe_east", "бел": "europe_east", "мкд": "europe_east", "рф": "europe_russia",
+    "срб": "europe_east", "укр": "europe_east", "қаз": "asia_central", "հայ": "asia_central", "الاردن": "middle_east",
+    "الجزائر": "africa_north", "السعودية": "middle_east", "المغرب": "middle_east", "امارات": "middle_east",
+    "ایران": "middle_east", "بھارت": "asia_south", "تونس": "africa_north", "سودان": "africa_sub",
+    "سورية": "middle_east", "عراق": "middle_east", "عمان": "middle_east", "فلسطين": "middle_east", "قطر": "middle_east",
+    "مصر": "middle_east", "مليسيا": "asia_southeast", "موريتانيا": "africa_north", "پاكستان": "asia_south",
+    "پاکستان": "asia_south", "ڀارت": "asia_south", "भारत": "asia_south", "বাংলা": "asia_south", "ভারত": "asia_south",
+    "ਭਾਰਤ": "asia_south", "ભારત": "asia_south", "இந்தியா": "asia_south", "இலங்கை": "asia_south",
+    "சிங்கப்பூர்": "asia_southeast", "భారత్": "asia_south", "ಭಾರತ": "asia_south", "ഭാരതം": "asia_south",
+    "ලංකා": "asia_southeast", "ไทย": "asia_southeast", "中国": "asia_east", "中國": "asia_east", "台湾": "asia_east",
+    "台灣": "asia_east", "新加坡": "asia_southeast", "澳門": "asia_east", "香港": "asia_east", "한국": "asia_east",
+    "st": "africa_sub"
+}
 
 
 # ---------------------
@@ -58,7 +167,7 @@ def process_lid(segment, input_dir, output_dir):
         for section in current_df.groupby(by="URL"):
             current_url = str(section[0])
             text = section[1].Text.values
-            text = str("\n".join(text))
+            text = "\n".join(text)
             current_size = len(text.split())
 
             text_list += [(current_time, current_url, current_size, text)]
@@ -88,12 +197,17 @@ def process_lid(segment, input_dir, output_dir):
 
 class CC_Corpus(object):
 
-    def __init__(self, countries_to_skip=None):
+    def __init__(self, countries_to_skip=None, url_filter: str = None):
 
         # Ignore certain countries if there is already enough data
         if countries_to_skip is None:
             countries_to_skip = []
         self.countries_to_skip = countries_to_skip
+
+        # Url filter list from file
+        self.url_filter = []
+        if url_filter is not None:
+            self.url_filter = utilities.get_url_filters_from_file(url_filter)
 
         # Download directory
         self.download_dir = "./common_crawl_download"
@@ -104,133 +218,7 @@ class CC_Corpus(object):
         # This list defines what countries to include in the corpus
         self.country_codes = []
 
-        # This dictionary maps country codes to (English) country names
-        self.country_codes_names = {
-            "ad": "Andorra", "ae": "United_Arab_Emirates", "af": "Afghanistan", "ag": "Antigua_and_Barbuda",
-            "al": "Albania", "am": "Armenia", "ao": "Angola", "aq": "Antarctica", "ar": "Argentina",
-            "as": "American_Samoa", "at": "Austria", "au": "Australia", "aw": "Aruba", "ax": "Åland",
-            "az": "Azerbaijan", "ba": "Bosnia and Herzegovina", "bb": "Barbados", "bd": "Bangladesh", "be": "Belgium",
-            "bf": "Burkina_Faso", "bg": "Bulgaria", "bh": "Bahrain", "bi": "Burundi", "bj": "Benin",
-            "bl": "Saint_Barthélemy", "bm": "Bermuda", "bn": "Brunei ", "bo": "Bolivia", "bq": "Caribbean_Netherlands",
-            "br": "Brazil", "bs": "Bahamas", "bt": "Bhutan", "bw": "Botswana", "by": "Belarus", "bz": "Belize",
-            "ca": "Canada", "cc": "Cocos", "cd": "Democratic_Republic_Congo", "cf": "Central_African_Republic",
-            "cg": "Republic_of_Congo", "ch": "Switzerland", "ci": "Côte_d'Ivoire", "ck": "Cook_Islands", "cl": "Chile",
-            "cm": "Cameroon", "cn": "China", "co": "Colombia", "cr": "Costa_Rica", "cu": "Cuba", "cv": "Cabo_Verde",
-            "cw": "Curaçao", "cx": "Christmas_Island", "cy": "Cyprus", "cz": "Czechia", "de": "Germany",
-            "dj": "Djibouti", "dk": "Denmark", "dm": "Dominica", "do": "Dominican_Republic", "dz": "Algeria",
-            "ec": "Ecuador", "ee": "Estonia", "eg": "Egypt", "er": "Eritrea", "es": "Spain", "et": "Ethiopia",
-            "fi": "Finland", "fj": "Fiji", "fk": "Falkland_Islands", "fm": "Federated_States_Micronesia",
-            "fo": "Faroe_Islands", "fr": "France", "ga": "Gabon", "gb": "United_Kingdom ", "gd": "Grenada",
-            "ge": "Georgia", "gf": "French_Guiana", "gg": "Guernsey", "gh": "Ghana", "gi": "Gibraltar",
-            "gl": "Greenland", "gm": "Gambia", "gn": "Guinea", "gp": "Guadeloupe", "gq": "Equatorial_Guinea",
-            "gr": "Greece", "gs": "South_Georgia", "gt": "Guatemala", "gu": "Guam", "gw": "Guinea-Bissau",
-            "gy": "Guyana", "hk": "Hong_Kong", "hm": "Heard_Island", "hn": "Honduras", "hr": "Croatia", "ht": "Haiti",
-            "hu": "Hungary", "id": "Indonesia", "ie": "Ireland", "il": "Israel", "im": "Isle_of_Man", "in": "India",
-            "iq": "Iraq", "ir": "Iran", "is": "Iceland", "it": "Italy", "je": "Jersey", "jm": "Jamaica", "jo": "Jordan",
-            "jp": "Japan", "ke": "Kenya", "kg": "Kyrgyzstan", "kh": "Cambodia", "ki": "Kiribati", "km": "Comoros",
-            "kn": "Saint_Kitts_Nevis", "kp": "North_Korea", "kr": "South_Korea", "kw": "Kuwait", "ky": "Cayman_Islands",
-            "kz": "Kazakhstan", "la": "Lao", "lb": "Lebanon", "lc": "Saint_Lucia", "li": "Liechtenstein",
-            "lk": "Sri_Lanka", "lr": "Liberia", "ls": "Lesotho", "lt": "Lithuania", "lu": "Luxembourg", "lv": "Latvia",
-            "ly": "Libya", "ma": "Morocco", "mc": "Monaco", "md": "Moldova", "me": "Montenegro", "mf": "Saint-Martin",
-            "mg": "Madagascar", "mh": "Marshall_Islands ", "mk": "North_Macedonia", "ml": "Mali", "mm": "Myanmar",
-            "mn": "Mongolia", "mo": "Macao", "mp": "Northern_Mariana_Islands", "mq": "Martinique", "mr": "Mauritania",
-            "ms": "Montserrat", "mt": "Malta", "mu": "Mauritius", "mv": "Maldives", "mw": "Malawi", "mx": "Mexico",
-            "my": "Malaysia", "mz": "Mozambique", "na": "Namibia", "nc": "New_Caledonia", "ne": "Niger",
-            "nf": "Norfolk_Island", "ng": "Nigeria", "ni": "Nicaragua", "nl": "Netherlands", "no": "Norway",
-            "np": "Nepal", "nr": "Nauru", "nu": "Niue", "nz": "New_Zealand", "om": "Oman", "pa": "Panama", "pe": "Peru",
-            "pf": "French_Polynesia", "pg": "Papua_New_Guinea", "ph": "Philippines", "pk": "Pakistan", "pl": "Poland",
-            "pm": "Saint_Pierre", "pn": "Pitcairn", "pr": "Puerto Rico", "ps": "Palestine", "pt": "Portugal",
-            "pw": "Palau", "py": "Paraguay", "qa": "Qatar", "re": "Réunion", "ro": "Romania", "rs": "Serbia",
-            "ru": "Russia", "rw": "Rwanda", "sa": "Saudi_Arabia", "sb": "Solomon_Islands", "sc": "Seychelles",
-            "sd": "Sudan", "se": "Sweden", "sg": "Singapore", "sh": "Saint_Helena", "si": "Slovenia", "sk": "Slovakia",
-            "sl": "Sierra_Leone", "sm": "San_Marino", "sn": "Senegal", "so": "Somalia", "sr": "Suriname",
-            "ss": "South_Sudan", "st": "Sao_Tome", "sv": "El_Salvador", "sx": "Sint_Maarten", "sy": "Syria",
-            "sz": "Eswatini", "tc": "Caicos_Islands", "td": "Chad", "tf": "French_Southern", "tg": "Togo",
-            "th": "Thailand", "tj": "Tajikistan", "tk": "Tokelau", "tl": "Timor-Leste", "tm": "Turkmenistan",
-            "tn": "Tunisia", "to": "Tonga", "tp": "East_Timor", "tr": "Turkey", "tt": "Trinidad_Tobago", "tv": "Tuvalu",
-            "tw": "China", "tz": "Tanzania", "ua": "Ukraine", "ug": "Uganda", "uk": "United_Kingdom",
-            "us": "United_States", "uy": "Uruguay", "uz": "Uzbekistan", "va": "The_Vatican", "vc": "Saint_Vincent",
-            "ve": "Venezuela", "vg": "Virgin_Islands", "vi": "Virgin_Islands", "vn": "Viet_Nam", "vu": "Vanuatu",
-            "wf": "Wallis_Futuna", "ws": "Samoa", "ye": "Yemen", "yt": "Mayotte", "za": "South_Africa", "zm": "Zambia",
-            "zw": "Zimbabwe", "ελ": "Greece", "бг": "Bulgaria", "бел": "Bulgaria", "мкд": "North_Macedonia",
-            "рф": "Russia", "срб": "Serbia", "укр": "Ukraine", "қаз": "Kazakhstan", "հայ": "Armenia",
-            "الاردن": "Jordan", "الجزائر": "Algeria", "السعودية": "Saudi_Arabia", "المغرب": "Morocco",
-            "امارات": "United_Arab_Emirates", "ایران": "Iran", "بھارت": "India", "تونس": "Tunisia", "سودان": "Sudan",
-            "سورية": "Syria", "عراق": "Iraq", "عمان": "Oman", "فلسطين": "Palestine", "قطر": "Qatar", "مصر": "Egypt",
-            "مليسيا": "Malaysia", "موريتانيا": "Mauritania", "پاكستان": "Pakistan", "پاکستان": "Pakistan",
-            "ڀارت": "India", "भारत": "India", "বাংলা": "Bangladesh", "ভারত": "India", "ਭਾਰਤ": "India", "ભારત": "India",
-            "இந்தியா": "India", "இலங்கை": "Sri_Lanka", "சிங்கப்பூர்": "Singapore", "భారత్": "India", "ಭಾರತ": "India",
-            "ഭാരതം": "India", "ලංකා": "Thailand", "ไทย": "Thailand", "中国": "China", "中國": "China", "台湾": "Taiwan",
-            "台灣": "Taiwan", "新加坡": "Singapore", "澳門": "Macao", "香港": "Hong_Kong", "한국": "South_Korea"
-        }
-
-        # This dictionary maps country names to large regions for organizational purposes
-        self.country_code_regions = {
-            "ad": "europe_west", "ae": "middle_east", "af": "asia_central", "al": "europe_west", "ao": "africa_sub",
-            "aq": "antarctica", "ar": "america_south", "as": "asia_southeast", "at": "europe_west", "au": "oceania",
-            "aw": "america_central", "ax": "europe_west", "az": "asia_central", "ba": "europe_east",
-            "bb": "america_central", "bd": "asia_south", "be": "europe_west", "bf": "africa_sub", "bg": "europe_east",
-            "bh": "middle_east", "bi": "africa_sub", "bj": "africa_sub", "bl": "american_central",
-            "bm": "america_central", "bn": "asia_southeast", "bo": "america_south", "bq": "america_central",
-            "br": "america_brazil", "bs": "america_central", "bt": "asia_south", "bv": "europe_west",
-            "bw": "africa_southern", "by": "europe_east", "bz": "america_central", "ca": "america_north",
-            "cd": "africa_sub", "cf": "africa_sub", "cg": "africa_sub", "ch": "europe_west", "ci": "africa_sub",
-            "ck": "asia_southeast", "cl": "america_south", "cm": "africa_sub", "cn": "asia_east", "co": "america_south",
-            "cr": "america_central", "cu": "america_central", "cv": "africa_sub", "cw": "america_central",
-            "cx": "asia_southeast", "cy": "europe_west", "cz": "europe_east", "de": "europe_west", "dj": "africa_north",
-            "dk": "europe_west", "dm": "america_central", "do": "america_central", "dz": "africa_north",
-            "ec": "america_south", "ee": "europe_east", "eg": "middle_east", "er": "africa_north", "es": "europe_west",
-            "et": "africa_north", "fi": "europe_west", "fj": "asia_southeast", "fk": "america_south",
-            "fm": "asia_southeast", "fo": "europe_west", "fr": "europe_west", "ga": "africa_sub", "gb": "europe_west",
-            "gd": "america_central", "ge": "asia_central", "gf": "america_south", "gh": "africa_sub",
-            "gi": "africa_north", "gl": "europe_west", "gm": "africa_sub", "gn": "africa_sub", "gp": "america_central",
-            "gr": "europe_west", "gt": "america_central", "gu": "oceania", "gw": "africa_sub", "gy": "america_south",
-            "hk": "asia_east", "hn": "america_central", "hr": "europe_east", "ht": "america_central",
-            "hu": "europe_east", "id": "asia_southeast", "ie": "europe_west", "il": "middle_east", "im": "europe_west",
-            "in": "asia_south", "iq": "middle_east", "ir": "asia_central", "is": "europe_west", "it": "europe_west",
-            "je": "europe_west", "jm": "america_central", "jo": "middle_east", "jp": "asia_east", "ke": "africa_sub",
-            "kg": "asia_central", "kh": "asia_southeast", "ki": "asia_southeast", "km": "africa_sub",
-            "kn": "america_central", "kp": "asia_east", "kr": "asia_east", "kw": "middle_east", "ky": "america_central",
-            "kz": "asia_central", "lb": "middle_east", "lc": "america_central", "li": "europe_west", "lk": "asia_south",
-            "lr": "africa_sub", "ls": "africa_southern", "lt": "europe_east", "lu": "europe_west", "lv": "europe_east",
-            "ma": "africa_north", "mc": "europe_west", "md": "europe_east", "mf": "america_central", "mg": "africa_sub",
-            "mh": "oceania", "mk": "europe_east", "ml": "africa_sub", "mm": "asia_southeast", "mn": "asia_east",
-            "mo": "asia_east", "mp": "oceania", "mq": "america_central", "mr": "africa_sub", "mt": "europe_west",
-            "mu": "asia_southeast", "mv": "europe_west", "mw": "africa_sub", "mx": "america_central",
-            "my": "asia_southeast", "mz": "africa_sub", "na": "africa_southern", "nc": "oceania", "ne": "africa_sub",
-            "nf": "oceania", "ng": "africa_sub", "ni": "america_central", "nl": "europe_west", "no": "europe_west",
-            "np": "asia_south", "nr": "asia_southeast", "nz": "oceania", "om": "middle_east", "pa": "america_central",
-            "pe": "america_south", "pf": "asia_southeast", "pg": "asia_southeast", "ph": "asia_southeast",
-            "pk": "asia_south", "pl": "europe_east", "pm": "america_north", "pr": "america_central",
-            "ps": "middle_east", "pt": "europe_west", "pw": "asia_southeast", "py": "america_south",
-            "qa": "middle_east", "re": "africa_sub", "ro": "europe_east", "rs": "europe_east", "ru": "europe_russia",
-            "rw": "africa_sub", "sa": "middle_east", "sb": "asia_southeast", "sc": "asia_south", "sd": "africa_north",
-            "se": "europe_west", "sg": "asia_southeast", "si": "europe_east", "sk": "europe_east", "sl": "africa_sub",
-            "sm": "asia_southeast", "sn": "africa_sub", "so": "africa_north", "sr": "america_south", "ss": "africa_sub",
-            "su": "europe_russia", "sv": "america_central", "sx": "america_central", "sy": "middle_east",
-            "sz": "africa_southern", "tc": "america_central", "td": "africa_sub", "tg": "africa_sub",
-            "th": "asia_southeast", "tj": "asia_central", "tl": "asia_southeast", "tm": "asia_central",
-            "tn": "africa_north", "tp": "asia_southeast", "tr": "middle_east", "tt": "america_central",
-            "tw": "asia_east", "tz": "africa_sub", "ua": "europe_east", "ug": "africa_sub", "uk": "europe_west",
-            "us": "america_north", "uy": "america_south", "uz": "asia_central", "va": "europe_west",
-            "vc": "america_central", "ve": "america_south", "vg": "america_central", "vi": "america_central",
-            "vn": "asia_southeast", "vu": "asia_southeast", "wf": "asia_southeast", "ye": "middle_east",
-            "yt": "africa_sub", "za": "africa_southern", "zm": "africa_sub", "zw": "africa_southern",
-            "ελ": "europe_west", "бг": "europe_east", "бел": "europe_east", "мкд": "europe_east", "рф": "europe_russia",
-            "срб": "europe_east", "укр": "europe_east", "қаз": "asia_central", "հայ": "asia_central",
-            "الاردن": "middle_east", "الجزائر": "africa_north", "السعودية": "middle_east", "المغرب": "middle_east",
-            "امارات": "middle_east", "ایران": "middle_east", "بھارت": "asia_south", "تونس": "africa_north",
-            "سودان": "africa_sub", "سورية": "middle_east", "عراق": "middle_east", "عمان": "middle_east",
-            "فلسطين": "middle_east", "قطر": "middle_east", "مصر": "middle_east", "مليسيا": "asia_southeast",
-            "موريتانيا": "africa_north", "پاكستان": "asia_south", "پاکستان": "asia_south", "ڀارت": "asia_south",
-            "भारत": "asia_south", "বাংলা": "asia_south", "ভারত": "asia_south", "ਭਾਰਤ": "asia_south",
-            "ભારત": "asia_south", "இந்தியா": "asia_south", "இலங்கை": "asia_south", "சிங்கப்பூர்": "asia_southeast",
-            "భారత్": "asia_south", "ಭಾರತ": "asia_south", "ഭാരതം": "asia_south", "ලංකා": "asia_southeast",
-            "ไทย": "asia_southeast", "中国": "asia_east", "中國": "asia_east", "台湾": "asia_east", "台灣": "asia_east",
-            "新加坡": "asia_southeast", "澳門": "asia_east", "香港": "asia_east", "한국": "asia_east", "st": "africa_sub"
-        }
-
-        # this sets up our module level logging so we can track execution
+        # this sets up our module level logging, so we can track execution
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.DEBUG)
         self.ch = logging.StreamHandler()
@@ -242,18 +230,9 @@ class CC_Corpus(object):
 
     # ----------------------------------------------------------------------------------------------#
 
-    def _strip_tags(self, line: str) -> str:
-        self.logger.info('inside strip_tags')
-        self.logger.debug("stripping tags in strip_tags")
-        line = re.sub(r"http\S+", "", line)
-        line = re.sub(r"@\S+", "", line)
-        line = re.sub(r"#\S+", "", line)
-        line = re.sub("<[^>]*>", "", line)
-        return line
-
     # ----------------------------------------------------------------------------------------------#
 
-    def _process_wet_record(self, wet_record) -> Optional[List[List[str, str, str, int, str, int]]]:
+    def _process_wet_record(self, wet_record) -> Optional[List[Tuple[str, str, str, int, str, int]]]:
         """Read individual wet record, split the content to different paragraph, apply filter to remove unwanted
         character and short/trivial lines """
         if wet_record.rec_type != "conversion":
@@ -262,13 +241,12 @@ class CC_Corpus(object):
         # getting domain abc.example.com -> ExtractResult(subdomain='abc', domain='hostname', suffix='com')
         url_domain, url_suffix = utilities.extract_url(url)
 
-        # TODO read file URL_FILTER
-        if url_suffix not in self.country_codes_names.keys() or url_domain in utilities.URL_FILTER:
+        if url_suffix not in COUNTRY_CODE_NAME.keys() or url_domain in self.url_filter:
             return
-        current_country = utilities.COUNTRY_CODES_NAME.get(url_suffix)
+        current_country = COUNTRY_CODE_NAME.get(url_suffix)
 
         web_content: str = wet_record.content_stream().read().decode("utf-8")
-        processed_line: List[List[str, str, str, int, str, int]] = []
+        processed_line: List[Tuple[str, str, str, int, str, int]] = []
         line_num = 0  # flag to make sure it is the same page
 
         for line in web_content.splitlines():
@@ -277,7 +255,7 @@ class CC_Corpus(object):
                 continue
             line = pipe(line,
                         # Remove links, hashtags, at-mentions, mark-up, and "RT"
-                        self._strip_tags,
+                        utilities.strip_tags,
                         # Remove emojis
                         utilities.remove_emoji,
                         # Remove extra spaces
@@ -310,23 +288,29 @@ class CC_Corpus(object):
                     string_counter.get("&", 0) < 4, string_counter.get("[", 0) < 3, string_counter.get("]", 0) < 3,
                     string_counter.get("*", 0) < 5]):
                 line_num += 1
-                processed_line.append([url_suffix, current_country, url, line_num, line, text_hash])
+                processed_line.append((url_suffix, current_country, url, line_num, line, text_hash))
+        return processed_line
 
-    def process_wet(self, file_dir: str):
+    def process_wet_segment(self, file_dir: str):
         """This method processes a single wet file and returns a dataframe containing the common fields"""
-        self.logger.info(f"Processing {file_dir}")
+        self.logger.debug(f"Processing {os.path.basename(file_dir)}")
 
         with open(file_dir, "rb") as file:
             lines = []
             for record in ArchiveIterator(file):
                 if temp := self._process_wet_record(record):
                     lines.extend(temp)
+            # add prefix dataframe to filename, change extension to .feather stead of gzip
+            path, filename = os.path.split(file_dir)
+            name, _ = os.path.splitext(filename)
 
-            return pd.DataFrame(lines, columns=("Domain", "Country", "URL", "LineID", "Text", "Hash"))
+            df = pd.DataFrame(lines, columns=("Domain", "Country", "URL", "LineID", "Text", "Hash"))
+            # df.reset_index()
+            df.to_feather(os.path.join(path, f'dataframe-{name}.feather'))
 
     # ------------------------------------------------------------------------------------------------#
 
-    def crawl_cc(self, prefix_list: str):
+    def download_cc(self, prefix_list: str) -> str:
         """This method downloads the complete CC for a given prefix, from the path file to the WARC files.
         e.g. CC-MAIN-2022-40
         """
@@ -334,11 +318,11 @@ class CC_Corpus(object):
         os.makedirs(os.path.abspath(self.download_dir), exist_ok=True)
         filepath = os.path.join(self.download_dir, f"{prefix_list}-wet.paths.gz".strip())
 
-        self.logger.info(f'Downloading {prefix_list}...')
+        self.logger.info(f'Index {prefix_list} downloading, save dir: {filepath}')
         response = requests.get(url)
         with open(filepath, "wb") as file:
             file.write(response.content)
-        self.logger.debug(f'Downloaded {prefix_list}, save dir: {filepath}')
+        return filepath
 
     def download_wet_segment(self, index: str):
         """
@@ -347,24 +331,65 @@ class CC_Corpus(object):
         """
         url = f"https://data.commoncrawl.org/{index}".strip()
         crawl_name = index.split('/')[1]
-        save_path = os.path.abspath(os.path.join(self.download_dir + crawl_name))
+        save_path = os.path.abspath(os.path.join(self.download_dir, crawl_name))
         os.makedirs(save_path, exist_ok=True)
         filepath = os.path.join(save_path, index.replace("/", "-")).strip()
 
-        self.logger.info(f'Downloading WET segment {index}')
         response = requests.get(url)
         with open(filepath, "wb") as file:
             file.write(response.content)
-        self.logger.debug(f'Downloaded {index}, save dir: {save_path}')
 
     # ----------------------------------------------------------------------------------------------------------------------#
 
-    def deduplicate_cc(self, nickname, path_to_input, path_to_output):
+    def _deduplicate_cc(self, path_to_input: str, path_to_output=None):
         """This method conducts deduplication on a directory of crawl files, nicknanme is the CC instance you want to
         Dedupe """
-        raise NotImplementedError
+        df = pd.read_feather(path_to_input)
+        if path_to_output is None:
+            path_to_output = path_to_input
+        original_len = len(df.index)
+        df.drop_duplicates(subset="Hash", inplace=True, ignore_index=True)
+        self.logger.debug(f"Formatted and Removed {original_len - len(df.index)} with remaining: {len(df.index)}")
+        df.to_feather(path_to_output)
+        self.logger.debug(f'Saved to {path_to_output}')
+
         # ------------------------------------------------------------------------------------------------------------#
 
+    def automatically_process_crawl(self, prefix_list, chunk_size=1):
+        """Automatically download, process, and deduplicate on 1 prefix
+        e.g. CC-MAIN-2022-40
+        """
+        prefix_filedir = self.download_cc(prefix_list)
+        with gzip.open(prefix_filedir) as index_file:
+            lines = [line.decode("utf-8").rstrip() for line in index_file.readlines()][:3]
+        chunks = utilities.divide_list(lines, chunk_size)
+        # process each shard
+        for line in chunks:
+            download = ThreadPool(8).map_async(self.download_wet_segment, line)
+            download.wait()
+            # self.download_wet_segment(line)
+
+            for segment_file in glob.glob(
+                    os.path.join(self.download_dir, prefix_list, f'crawl-data-{prefix_list}-segments-*.gz')):
+                self.process_wet_segment(segment_file)
+                os.remove(segment_file)
+
+            # Combine all dataframe within a shard
+            df_files = glob.glob(
+                os.path.join(self.download_dir, prefix_list, f'dataframe-crawl-data-{prefix_list}-segments-*.feather'))
+            df_list = []
+            for df_file in df_files:
+                df_list.append(pd.read_feather(df_file))
+                os.remove(df_file)
+            # Save to file using the latest name, add prefix combined
+            filename = os.path.join(self.download_dir, prefix_list, f"combined-{os.path.basename(max(df_files))}")
+            pd.concat(df_list, ignore_index=True).to_feather(filename)
+            # Dedupe, add prefix deduplicated
+            new_filename = os.path.join(self.download_dir, prefix_list, f"deduplicated-{os.path.basename(filename)}")
+            self._deduplicate_cc(filename, new_filename)
+            os.remove(filename)
+
+        # ----------------------------------------------------------------------------------------------------------------------#
     def lid_cc(self, input_dir, output_dir, region, workers):
         """Compare classification of 2 language id models (LID), if it is not the same then remove it"""
         segment_list = []
@@ -383,61 +408,62 @@ class CC_Corpus(object):
         pool_instance.close()
         pool_instance.join()
 
-    # --------------------------------------------------------------------
+        # --------------------------------------------------------------------
 
     def final_cc(self, input_dir, output_dir, region):
 
-        for country in os.listdir(os.path.join(input_dir, region)):
-            for language in os.listdir(os.path.join(input_dir, region, country)):
+            for country in os.listdir(os.path.join(input_dir, region)):
+                for language in os.listdir(os.path.join(input_dir, region, country)):
 
-                first_flag = True  # First for this set
-                counter = 1
+                    first_flag = True  # First for this set
+                    counter = 1
 
-                for file in os.listdir(os.path.join(input_dir, region, country, language)):
+                    for file in os.listdir(os.path.join(input_dir, region, country, language)):
 
-                    file = os.path.join(input_dir, region, country, language, file)
-                    new_df = pd.read_csv(file, compression="gzip")
+                        file = os.path.join(input_dir, region, country, language, file)
+                        new_df = pd.read_csv(file, compression="gzip")
 
-                    if first_flag == True:
-                        first_flag = False
-                        current_df = new_df
-                        print("\tFirst time for " + region + " " + country + " " + language)
+                        if first_flag == True:
+                            first_flag = False
+                            current_df = new_df
+                            print("\tFirst time for " + region + " " + country + " " + language)
 
-                    else:
+                        else:
 
-                        # First, merge new_df
-                        print("\tContinuing with " + file)
-                        current_df = pd.concat([current_df, new_df])
-                        current_df.drop_duplicates(subset="URL", keep="first", inplace=False)
+                            # First, merge new_df
+                            print("\tContinuing with " + file)
+                            current_df = pd.concat([current_df, new_df])
+                            current_df.drop_duplicates(subset="URL", keep="first", inplace=False)
 
-                        # Second, check length
-                        if len(current_df) > 100000:
-                            write_df = current_df.head(n=100000)
-                            current_df = current_df.tail(n=len(current_df) - 100000)
+                            # Second, check length
+                            if len(current_df) > 100000:
+                                write_df = current_df.head(n=100000)
+                                current_df = current_df.tail(n=len(current_df) - 100000)
 
-                            write_name = region + "." + country + "." + language + "." + str(counter) + ".gz"
-                            write_name = os.path.join(output_dir, region, country, language, write_name)
-                            os.makedirs(os.path.join(output_dir, region, country, language), exist_ok=True)
-                            counter += 1
+                                write_name = region + "." + country + "." + language + "." + str(counter) + ".gz"
+                                write_name = os.path.join(output_dir, region, country, language, write_name)
+                                os.makedirs(os.path.join(output_dir, region, country, language), exist_ok=True)
+                                counter += 1
 
-                            write_df.to_csv(write_name, header=True, index=False, index_label=False, compression="gzip")
-                            print("\t\tWriting " + write_name)
-                            del write_df
+                                write_df.to_csv(write_name, header=True, index=False, index_label=False,
+                                                compression="gzip")
+                                print("\t\tWriting " + write_name)
+                                del write_df
 
-                # Done with all files, write the remaining
-                write_name = region + "." + country + "." + language + "." + str(counter) + ".gz"
-                write_name = os.path.join(output_dir, region, country, language, write_name)
-                os.makedirs(os.path.join(output_dir, region, country, language), exist_ok=True)
-                counter += 1
+                    # Done with all files, write the remaining
+                    write_name = region + "." + country + "." + language + "." + str(counter) + ".gz"
+                    write_name = os.path.join(output_dir, region, country, language, write_name)
+                    os.makedirs(os.path.join(output_dir, region, country, language), exist_ok=True)
+                    counter += 1
 
-                current_df.to_csv(write_name, header=True, index=False, index_label=False, compression="gzip")
-                print("\t\tWriting " + write_name)
+                    current_df.to_csv(write_name, header=True, index=False, index_label=False, compression="gzip")
+                    print("\t\tWriting " + write_name)
 
-                del current_df
+                    del current_df
 
-                # Done, now delete
-                for file in os.listdir(os.path.join(input_dir, region, country, language)):
-                    file = os.path.join(input_dir, region, country, language, file)
-                    os.remove(file)
+                    # Done, now delete
+                    for file in os.listdir(os.path.join(input_dir, region, country, language)):
+                        file = os.path.join(input_dir, region, country, language, file)
+                        os.remove(file)
 
-                    # --------------------------------------------------------------------
+                        # --------------------------------------------------------------------

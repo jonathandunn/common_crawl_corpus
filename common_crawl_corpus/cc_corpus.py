@@ -355,7 +355,7 @@ class CC_Corpus(object):
 
         # ------------------------------------------------------------------------------------------------------------#
 
-    def automatically_process_crawl(self, prefix_list, chunk_size=1):
+    def automatically_process_crawl(self, prefix_list, chunk_size=100):
         """Automatically download, process, and deduplicate on 1 prefix
         e.g. CC-MAIN-2022-40
         """

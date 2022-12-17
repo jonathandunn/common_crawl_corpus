@@ -242,7 +242,7 @@ def divide_list(input_list, chunk_size):
     return [input_list[i:i + chunk_size] for i in range(0, length, chunk_size)]
 
 
-def strip_tags(self, line: str) -> str:
+def strip_tags(line: str) -> str:
     line = re.sub(r"http\S+", "", line)
     line = re.sub(r"@\S+", "", line)
     line = re.sub(r"#\S+", "", line)

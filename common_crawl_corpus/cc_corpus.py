@@ -298,7 +298,8 @@ class CC_Corpus(object):
         with open(file_dir, "rb") as file:
             lines = []
             for record in ArchiveIterator(file):
-                if temp := self._process_wet_record(record):
+                temp = self._process_wet_record(record)
+                if temp:
                     lines.extend(temp)
             # add prefix dataframe to filename, change extension to .feather stead of gzip
             path, filename = os.path.split(file_dir)

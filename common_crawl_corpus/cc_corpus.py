@@ -362,7 +362,7 @@ class CC_Corpus(object):
         """
         prefix_filedir = self.download_cc(prefix_list)
         with gzip.open(prefix_filedir) as index_file:
-            lines = [line.decode("utf-8").rstrip() for line in index_file.readlines()][:3]
+            lines = [line.decode("utf-8").rstrip() for line in index_file.readlines()]
         chunks = utilities.divide_list(lines, chunk_size)
         # process each shard
         for line in chunks:

@@ -197,7 +197,7 @@ def process_lid(segment, input_dir, output_dir):
 
 class CC_Corpus(object):
 
-    def __init__(self, countries_to_skip=None, url_filter: str = None):
+    def __init__(self, countries_to_skip=None, url_filter: str = None, download_dir: str = None):
 
         # Ignore certain countries if there is already enough data
         if countries_to_skip is None:
@@ -210,7 +210,10 @@ class CC_Corpus(object):
             self.url_filter = utilities.get_url_filters_from_file(url_filter)
 
         # Download directory
-        self.download_dir = "./common_crawl_download"
+        if download_dir is not None:
+            self.download_dir = download_dir
+        else:
+            self.download_dir = "./common_crawl_download"
 
         # Detecting language based on alphabet
         self.alphabet_detector = AlphabetDetector()
@@ -227,6 +230,8 @@ class CC_Corpus(object):
         self.ch.setFormatter(self.formatter)
         self.logger.addHandler(self.ch)
         self.logger.debug('cc_corpus class initialized')
+
+	#setup input and output dirs for methods
 
     # ----------------------------------------------------------------------------------------------#
     def _process_wet_record(self, wet_record) -> Optional[List[Tuple[str, str, str, int, str, int]]]:

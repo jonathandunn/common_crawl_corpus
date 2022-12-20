@@ -1,4 +1,7 @@
 Version: ? -------------------------
+Update logging to be more consistent
+
+Version: ? -------------------------
 Changed it so directory paths are stored in the class instantiation
 
 Version: Prehistory ----------------

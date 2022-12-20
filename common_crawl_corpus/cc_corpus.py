@@ -229,7 +229,7 @@ class CC_Corpus(object):
         self.formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         self.ch.setFormatter(self.formatter)
         self.logger.addHandler(self.ch)
-        self.logger.debug('cc_corpus class initialized')
+        self.logger.debug('cc_corpus: class initialized')
 
 	#setup input and output dirs for methods
 
@@ -295,7 +295,7 @@ class CC_Corpus(object):
 
     def process_wet_segment(self, file_dir: str):
         """This method processes a single wet file and returns a dataframe containing the common fields"""
-        self.logger.debug(f"Processing {os.path.basename(file_dir)}")
+        self.logger.debug(f"process_wet_segment: processing {os.path.basename(file_dir)}")
 
         with open(file_dir, "rb") as file:
             lines = []
@@ -317,11 +317,13 @@ class CC_Corpus(object):
         """This method downloads the complete CC for a given prefix, from the path file to the WARC files.
         e.g. CC-MAIN-2022-40
         """
+        self.logger.debug('download_cc: downloading file: %s', prefix_list)
+        self.logger.info(f'download_cc: downloading file')
         url = f"https://data.commoncrawl.org/crawl-data/{prefix_list}/wet.paths.gz"
         os.makedirs(os.path.abspath(self.download_dir), exist_ok=True)
         filepath = os.path.join(self.download_dir, f"{prefix_list}-wet.paths.gz".strip())
 
-        self.logger.info(f'Index {prefix_list} downloading, save dir: {filepath}')
+        self.logger.info(f'index {prefix_list} downloading, save dir: {filepath}')
         response = requests.get(url)
         with open(filepath, "wb") as file:
             file.write(response.content)
@@ -332,6 +334,8 @@ class CC_Corpus(object):
             Downloads the second level index file for the given year range.
             e.g. crawl-data/CC-MAIN-2022-40/segments/1664030331677.90/wet/CC-MAIN-20220924151538-20220924181538-00000.warc.wet.gz
         """
+        self.logger.debug(f'download_wet_segment: downloading {index}')
+        self.logger.info(f'download_wet_segment: downloading file')
         url = f"https://data.commoncrawl.org/{index}".strip()
         crawl_name = index.split('/')[1]
         save_path = os.path.abspath(os.path.join(self.download_dir, crawl_name))
@@ -347,14 +351,15 @@ class CC_Corpus(object):
     def _deduplicate_cc(self, path_to_input: str, path_to_output=None):
         """This method conducts deduplication on a directory of crawl files, nicknanme is the CC instance you want to
         Dedupe """
+        self.logger.info(f'_deduplicate_cc: deduplicating df')
         df = pd.read_feather(path_to_input)
         if path_to_output is None:
             path_to_output = path_to_input
         original_len = len(df.index)
         df.drop_duplicates(subset="Hash", inplace=True, ignore_index=True)
-        self.logger.debug(f"Formatted and Removed {original_len - len(df.index)} with remaining: {len(df.index)}")
+        self.logger.debug(f"_deduplicate_cc: formatted and removed {original_len - len(df.index)} with remaining: {len(df.index)}")
         df.to_feather(path_to_output)
-        self.logger.debug(f'Saved to {path_to_output}')
+        self.logger.debug(f'_deduplicate_cc: saved to {path_to_output}')
 
         # ------------------------------------------------------------------------------------------------------------#
 
@@ -362,13 +367,16 @@ class CC_Corpus(object):
         """Automatically download, process, and deduplicate on 1 prefix
         e.g. CC-MAIN-2022-40
         """
+        self.logger.debug(f'automatically_process_crawl: begining processing on {prefix_list}')
+        self.logger.info(f'automatically_process_crawl: processing crawl file')
         prefix_filedir = self.download_cc(prefix_list)
         with gzip.open(prefix_filedir) as index_file:
             lines = [line.decode("utf-8").rstrip() for line in index_file.readlines()]
         chunks = utilities.divide_list(lines, chunk_size)
         # process each shard
         for chunk in chunks:
-            print(len(chunk), chunk)
+            chunk_info = (len(chunk), chunk)
+            self.logger.debug(f'automatically_process_crawl: {chunk_info}')
             download = ThreadPool(8).map_async(self.download_wet_segment, chunk)
             download.wait()
             # self.download_wet_segment(line)

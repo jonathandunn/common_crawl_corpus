@@ -231,7 +231,7 @@ class CC_Corpus(object):
         self.logger.addHandler(self.ch)
         self.logger.debug('cc_corpus: class initialized')
 
-	#setup input and output dirs for methods
+    # setup input and output dirs for methods
 
     # ----------------------------------------------------------------------------------------------#
     def _process_wet_record(self, wet_record) -> Optional[List[Tuple[str, str, str, int, str, int]]]:
@@ -293,23 +293,28 @@ class CC_Corpus(object):
                 processed_line.append((url_suffix, current_country, url, line_num, line, text_hash))
         return processed_line
 
-    def process_wet_segment(self, file_dir: str):
-        """This method processes a single wet file and returns a dataframe containing the common fields"""
-        self.logger.debug(f"process_wet_segment: processing {os.path.basename(file_dir)}")
+    def download_and_process_wet_segment(self, index: str):
+        """
+        Downloads (as stream) the second level index file for the given year range. Doesn't need to save the actual files
+        Then, processes returns a dataframe containing the common fields
+        e.g. crawl-data/CC-MAIN-2022-40/segments/1664030331677.90/wet/CC-MAIN-20220924151538-20220924181538-00000.warc.wet.gz
+        """
+        self.logger.debug(f"download & process_wet_segment: processing {os.path.basename(index)}")
+        url = f"https://data.commoncrawl.org/{index}".strip()
+        segment_stream = requests.get(url, stream=True)
 
-        with open(file_dir, "rb") as file:
-            lines = []
-            for record in ArchiveIterator(file):
-                temp = self._process_wet_record(record)
-                if temp:
-                    lines.extend(temp)
-            # add prefix dataframe to filename, change extension to .feather stead of gzip
-            path, filename = os.path.split(file_dir)
-            name, _ = os.path.splitext(filename)
+        lines = []
+        for record in ArchiveIterator(segment_stream.raw):
+            if temp := self._process_wet_record(record):
+                lines.extend(temp)
+        # add prefix dataframe to filename, change extension to .feather stead of gzip
+        path_split = index.split(os.sep)
+        cc_index = path_split[1]  # CC-MAIN-2022-40
+        name, _ = os.path.splitext(path_split[-1])  # e.g. CC-MAIN-2....wet
 
-            df = pd.DataFrame(lines, columns=("Domain", "Country", "URL", "LineID", "Text", "Hash"))
-            df.reset_index()
-            df.to_feather(os.path.join(path, f'dataframe-{name}.feather'))
+        df = pd.DataFrame(lines, columns=("Domain", "Country", "URL", "LineID", "Text", "Hash"))
+        df.reset_index()
+        df.to_feather(os.path.join(self.download_dir, cc_index, f'{name}.feather'))
 
     # ------------------------------------------------------------------------------------------------#
 
@@ -317,78 +322,52 @@ class CC_Corpus(object):
         """This method downloads the complete CC for a given prefix, from the path file to the WARC files.
         e.g. CC-MAIN-2022-40
         """
-        self.logger.debug('download_cc: downloading file: %s', prefix_list)
-        self.logger.info(f'download_cc: downloading file')
         url = f"https://data.commoncrawl.org/crawl-data/{prefix_list}/wet.paths.gz"
-        os.makedirs(os.path.abspath(self.download_dir), exist_ok=True)
-        filepath = os.path.join(self.download_dir, f"{prefix_list}-wet.paths.gz".strip())
+        os.makedirs(os.path.join(self.download_dir, prefix_list), exist_ok=True)
+        filepath = os.path.join(self.download_dir, prefix_list, f"{prefix_list}-wet.paths.gz".strip())
 
-        self.logger.info(f'index {prefix_list} downloading, save dir: {filepath}')
+        self.logger.info(f'Download_cc: Prefix {prefix_list} downloading, \tsave dir: {filepath}')
+
         response = requests.get(url)
         with open(filepath, "wb") as file:
             file.write(response.content)
         return filepath
 
-    def download_wet_segment(self, index: str):
-        """
-            Downloads the second level index file for the given year range.
-            e.g. crawl-data/CC-MAIN-2022-40/segments/1664030331677.90/wet/CC-MAIN-20220924151538-20220924181538-00000.warc.wet.gz
-        """
-        self.logger.debug(f'download_wet_segment: downloading {index}')
-        self.logger.info(f'download_wet_segment: downloading file')
-        url = f"https://data.commoncrawl.org/{index}".strip()
-        crawl_name = index.split('/')[1]
-        save_path = os.path.abspath(os.path.join(self.download_dir, crawl_name))
-        os.makedirs(save_path, exist_ok=True)
-        filepath = os.path.join(save_path, index.replace("/", "-")).strip()
-
-        response = requests.get(url)
-        with open(filepath, "wb") as file:
-            file.write(response.content)
-
     # ----------------------------------------------------------------------------------------------------------------------#
 
     def _deduplicate_cc(self, path_to_input: str, path_to_output=None):
-        """This method conducts deduplication on a directory of crawl files, nicknanme is the CC instance you want to
-        Dedupe """
-        self.logger.info(f'_deduplicate_cc: deduplicating df')
+        """This method conducts deduplication on a directory of crawl files"""
+        self.logger.info(f'_deduplicate_cc: De-duplicating {os.path.basename(path_to_input)}')
         df = pd.read_feather(path_to_input)
         if path_to_output is None:
             path_to_output = path_to_input
         original_len = len(df.index)
         df.drop_duplicates(subset="Hash", inplace=True, ignore_index=True)
-        self.logger.debug(f"_deduplicate_cc: formatted and removed {original_len - len(df.index)} with remaining: {len(df.index)}")
+        self.logger.debug(
+            f"_deduplicate_cc: {original_len} formatted and removed {original_len - len(df.index)}, remaining: {len(df.index)}")
         df.to_feather(path_to_output)
-        self.logger.debug(f'_deduplicate_cc: saved to {path_to_output}')
+        self.logger.debug(f'_deduplicate_cc: saved as {path_to_output}')
 
         # ------------------------------------------------------------------------------------------------------------#
 
-    def automatically_process_crawl(self, prefix_list, chunk_size=3):
+    def automatically_process_crawl(self, prefix_list, chunk_size=2):
         """Automatically download, process, and deduplicate on 1 prefix
         e.g. CC-MAIN-2022-40
         """
-        self.logger.debug(f'automatically_process_crawl: begining processing on {prefix_list}')
-        self.logger.info(f'automatically_process_crawl: processing crawl file')
+        self.logger.debug(f'automatically_process_crawl: begin processing on {prefix_list}')
         prefix_filedir = self.download_cc(prefix_list)
         with gzip.open(prefix_filedir) as index_file:
             lines = [line.decode("utf-8").rstrip() for line in index_file.readlines()]
         chunks = utilities.divide_list(lines, chunk_size)
-        # process each shard
-        for chunk in chunks:
-            chunk_info = (len(chunk), chunk)
-            self.logger.debug(f'automatically_process_crawl: {chunk_info}')
-            download = ThreadPool(8).map_async(self.download_wet_segment, chunk)
-            download.wait()
-            # self.download_wet_segment(line)
-
-            for segment_file in glob.glob(
-                    os.path.join(self.download_dir, prefix_list, f'crawl-data-{prefix_list}-segments-*.gz')):
-                self.process_wet_segment(segment_file)
-                os.remove(segment_file)
+        # process each chunk
+        for i, chunk in enumerate(chunks, start=1):
+            self.logger.info(f'Processing chunk {i} of {len(chunks)}')
+            self.logger.debug(chunk)
+            for segment in chunk:
+                self.download_and_process_wet_segment(segment)
 
             # Combine all dataframe within a shard
-            df_files = glob.glob(
-                os.path.join(self.download_dir, prefix_list, f'dataframe-crawl-data-{prefix_list}-segments-*.feather'))
+            df_files = glob.glob(os.path.join(self.download_dir, prefix_list, 'CC-MAIN-*.feather'))
             df_list = []
             for df_file in df_files:
                 df_list.append(pd.read_feather(df_file))

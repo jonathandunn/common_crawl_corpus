@@ -207,7 +207,7 @@ class CC_Corpus(object):
         # Url filter list from file
         self.url_filter = []
         if url_filter is not None:
-            self.url_filter = utilities.get_url_filters_from_file(url_filter)
+            self.url_filter = utilities.get_url_filters_from_file(url_filter).keys()
 
         # Download directory
         if download_dir is not None:

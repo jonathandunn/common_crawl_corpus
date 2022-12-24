@@ -1,4 +1,5 @@
-import typing
+from typing import Dict
+import csv
 import emoji
 import tldextract
 import nltk
@@ -7,7 +8,7 @@ import pandas as pd
 
 ILLEGAL_CHAR = ("|", "©", "«", "®", "»", "˂", "˃", "˄", "˅", "/", "\\", "{", "}")
 
-COUNTRY_CODES_NAME: typing.Dict[str, str] = {
+COUNTRY_CODES_NAME: Dict[str, str] = {
     "ad": "Andorra", "ae": "United_Arab_Emirates", "af": "Afghanistan", "ag": "Antigua_and_Barbuda", "al": "Albania",
     "am": "Armenia", "ao": "Angola", "aq": "Antarctica", "ar": "Argentina", "as": "American_Samoa",
     "at": "Austria", "au": "Australia", "aw": "Aruba", "ax": "Åland", "az": "Azerbaijan",
@@ -231,9 +232,28 @@ def extract_n_grams(text: str, n: int = 1):
     return nltk.ngrams(text, n)
 
 
-def get_url_filters_from_file(file_dir):
-    df = pd.read_csv(file_dir, sep=' ', header=None)
-    return df[0].to_list()
+def get_url_filters_from_file(file_dir) -> Dict[str, Dict[str, int]]:
+    """
+    Getting dictionary of url filters from file
+    e.g. {'hotel': {'num_of_countries': 9, 'num_of_pages': 253383},...}
+    """
+    df = pd.read_csv(file_dir,
+                     sep=' ',
+                     names=['domain', 'num_of_countries', 'num_of_pages'],
+                     index_col='domain')
+    return df.to_dict(orient='index')
+
+
+def write_url_filters_to_file(file_dir, filters: Dict[str, Dict[str, int]]):
+    """
+    Writing to a space delimited file, with columns as follows
+    Base url - Number of countries - Number of pages
+    """
+    with open(file_dir, 'w', newline='') as file:
+        writer = csv.writer(file, delimiter=' ')
+        for key, value in filters.items():
+            row = [key, value['num_of_countries'], value['num_of_pages']]
+            writer.writerow(row)
 
 
 def divide_list(input_list, chunk_size):

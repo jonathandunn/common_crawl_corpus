@@ -1,0 +1,10 @@
+warcio
+tldextract
+gensim
+pyarrow
+tqdm
+pandas
+cytoolz
+nltk
+emoji
+alphabet-detector

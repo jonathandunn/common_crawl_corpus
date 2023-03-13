@@ -6,6 +6,11 @@ Changed naming convention of changelog.md
 Update logging to be more consistent
 
 # Version: 1.1.1
+
+Version: ? -------------------------
+Update logging to be more consistent
+
+Version: ? -------------------------
 Changed it so directory paths are stored in the class instantiation
 
 # Version: 1.0 - Prehistory
